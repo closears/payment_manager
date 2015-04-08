@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}待遇批量绑定{% endblock %}
+{% block content %}
+<form method='POST'>
+  <div>
+    <label for='standard'>待遇标准</label>
+    <select id='standard' name='standard'>
+      {% for standard in standards %}
+      <option value='{{ standard.id }}'>{{ standard.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for='min_birthday'>开始出生日期</label>
+    <input id='min_birthday' name='min_birthday'>
+  </div>
+  <div>
+    <label for='max_birthday'>最后出生日期</label>
+    <input id='max_birthday' name='max_birthday'>
+  </div>
+  <div>
+    <label for='status'>状态</label>
+    <select id='status' name='status'>
+      <option value='{{ personstatus()[personstatus().NORMAL_RETIRE][0] }}'>
+	{{ personstatus()[personstatus().NORMAL_RETIRE][1] }}
+      </option>
+      <option value='{{ personstatus()[personstatus().SUSPEND_RETIRE][0] }}>
+	{{ personstatus()[personstatus().SUSPEND_RETIRE][1] }}
+      </option>
+    </select>
+  </div>
+  <div>
+    <label for='start_date'>开始日期</label>
+    <input id='start_date' name='start_date'>
+  </div>
+  <div>
+    <label for='end_date'>结束日期</label>
+    <input id='end_date' name='end_date'>
+  </div>
+  <div>
+    <label for='except'>排除</label>
+    <textarea id='excepts' name='excepts'></textarea>
+  </div>
+  <input type='submit' value='提交'>
+</form>
+{% endblock %}

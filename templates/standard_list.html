@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}待遇列表{% endblock %}
+{% block content %}
+<table>
+  <thead>
+    <tr>
+      <th>名称</th>
+      <th>金额</th>
+      <th>开始时间</th>
+      <th>结束时间</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for assoc in assoces %}
+    <tr>
+      <td>{{ assoc.standard.name }}</td>
+      <td>{{ assoc.standard.money }}</td>
+      <td>{{ assoc.start_date.strftime('%Y-%m-%d') }}</td>
+      <td>{{ assoc.end_date.strftime('%Y-%m-%d') }}</td>
+      <td>
+	<form action='/standard/debind/idcard={{ assoc.person.idcard }}' method='POST'>
+	  <input type='submit' value='解除绑定'>
+	</form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}地址详情{% endblock %}
+{% block content %}
+<div>
+  <span>上级地址:</span><span>{{ address.parent.name|default('无') }}</span>
+</div>
+<div>
+  <span>名称:</span><span>{{ address.name }}</span>
+</div>
+<div>
+  <span>编号:</span><span>{{ address.no }}</span>
+</div>
+{% endblock %}

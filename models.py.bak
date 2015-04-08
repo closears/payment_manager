@@ -1,0 +1,171 @@
+import re
+import datetime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, \
+    Table
+from sqlalchemy.orm import relationship, backref, sessionmaker
+from sqlalchemy.orm.exc import NoResultFound
+
+engine = create_engine('sqlite:///:memory:', echo=True)
+Base = declarative_base(bind=engine)
+Session = sessionmaker(bind=engine)
+
+
+class Address(Base):
+    __tablename__ = 'addresses'
+    id = Column(Integer, primary_key=True)
+    no = Column(String(length=11), unique=True, nullable=False)
+    name = Column(String, unique=True, nullable=False)
+    parent_id = Column(Integer, ForeignKey('addresses.id'))
+    parent = relationship('Address', backref=backref('childs', order_by=id))
+
+    def __repr__(self):
+        return "<Address(name={name},parent={parent},no={no})>".format(
+            name=self.name,
+            parent=self.parent,
+            no=self.no
+        )
+
+
+person_standard_table = Table(
+    'person_standard',
+    Base.metadata,
+    Column('person_id', Integer, ForeignKey('persons.id')),
+    Column('standard_id', Integer, ForeignKey('standards.id')))
+
+
+class Person(Base):
+    __tablename__ = 'persons'
+    id = Column(Integer, primary_key=True)
+    idcard = Column(String(length=18), unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    address_id = Column(Integer, ForeignKey('addresses.id'), nullable=False)
+    address = relationship('Address', backref=backref('persons', order_by=id))
+    address_detail = Column(String, nullable=False)
+    securi_no = Column(String, nullable=False)
+    personal_wages = Column(Float(precision=2), nullable=False, default=0.0)
+    standard_wages = relationship('Standard', secondary=person_standard_table,
+                                  backref='persons')
+    create_time = Column(DateTime, nullable=False,
+                         default=datetime.datetime.now)
+
+    def __repr__(self):
+        return "<Person(idcard={idcard},name={name},address={address},\
+        address_detail={address_detail},securi_no={securi_no},\
+        create_time={create_time})>".format(
+            idcard=self.idcard,
+            name=self.name,
+            address=self.address,
+            address_detail=self.address_detail,
+            securi_no=self.securi_no,
+            create_time=self.create_time
+        )
+
+
+class Standard(Base):
+    __tablename__ = 'standards'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    money = Column(Float(precision=2), nullable=False, default=0.0)
+    persons = relationship('Person', secondary=person_standard_table,
+                           backref='standard_wages')
+
+    def __repr__(self):
+        return "<Standard(name={name}, money={money})>".format(
+            name=self.name,
+            money=self.money
+        )
+
+
+class Bankcard(Base):
+    __tablename__ = 'bankcards'
+    id = Column(Integer, primary_key=True)
+    no = Column(String(length=19), unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    owner_id = Column(Integer, ForeignKey('persons.id'))
+    owner = relationship('Person', backref=backref('bankcards', order_by=id))
+    create_time = Column(DateTime, default=datetime.datetime.now)
+
+    def __repr__(self):
+        return "<Bankcard(no={no},name={name},owner={owner},\
+        create_time={create_time})>".format(
+            no=self.no,
+            name=self.name,
+            owner=self.owner,
+            create_time=self.create_time
+        )
+
+
+class PayBookItem(Base):
+    __tablename__ = 'paybookitems'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    parent_id = Column(Integer, ForeignKey('paybookitems.id'))
+    direct = Column(Integer, nullable=False)
+    parent = relationship('PayBookItem',
+                          backref=backref('childs', order_by=id))
+
+    def __repr__(self):
+        return "<PayBookItem(name={name},parent={parent})>".format(
+            name=self.name,
+            parent=self.parent
+        )
+
+
+class PayBook(Base):
+    __tablename__ = 'paybooks'
+    id = Column(Integer, primary_key=True)
+    person_id = Column(Integer, ForeignKey('persons.id'), nullable=False)
+    bankcard_id = Column(Integer, ForeignKey('bankcards.id'), nullable=False)
+    item_id = Column(Integer, ForeignKey('paybookitems.id'), nullable=False)
+    money = Column(Float(precision=2), nullable=False)
+    peroid = Column(DateTime, default=datetime.datetime.now, nullable=False)
+    person = relationship('Person', backref=backref('paybooks', order_by=id))
+    bankcard = relationship('Bankcard', backref=backref('paybooks',
+                                                        order_by=id))
+    item = relationship('PayBookItem')
+
+    def __repr__(self):
+        return "<PayBook(money={money},person={person},bankcard={bankcard},\
+        item={item},peroid={peroid})>".format(
+            money=self.money,
+            person=self.person,
+            bankcard=self.bankcard,
+            item=self.item,
+            peroid=self.peroid
+        )
+    
+    def create_from_text(self, text, peroid=None):
+        '''
+00000000|xxx|42272519510701001X|60|42052511001|6213360770888888888| 
+'''
+        regex = re.compile(r'^(\d+)\|(.*?)\|(\d{17}[\dX])\|(\d+(?:\.\d+)?)' + 
+                           +r'\|(\d+)\|(\d+)(?:.*?)\|\s+$')
+        result = regex.match(text)
+        if result is None:
+            return
+        idcard_no = result.group(3)
+        bankcard_no = result.group(6)
+        session = Session()
+        try:
+            bankcard = session.query(Bankcard).filter(no=bankcard_no).one()
+            person = session.query(Person).filter(idcard=idcard_no).one()
+            item = session.query(PayBookItem).filter(name='sys').one()
+        except NoResultFound as e:
+            print(e)
+            return
+        self.bankcard = bankcard
+        self.person = person
+        self.item = item
+        self.money = float(result.group(4))
+        if peroid is not None:
+            if isinstance(peroid, datetime.datetime):
+                peroid = '{:%Y-%m-01}'.format(peroid)
+            else:
+                year, month, other = peroid.split('-')
+                peroid = '{}-{}-01'.format(year, month)
+            self.peroid = datetime.datetime.strptime(peroid, '%Y-%m-01')
+
+if __name__ == '__main__':
+    Base.metadata.create_all()

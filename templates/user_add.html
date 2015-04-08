@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}用户添加{% endblock %}
+{% block content %}
+<form method='POST'>
+  <div>
+    <label for='name'>用户名</label>
+    <input id='name' name='name'>
+  </div>
+  <div>
+    <label for='password'>密码</label>
+    <input id='password' name='password' type='password'>
+  </div>
+  <div>
+    <label for='is_activate'></label>
+    <input id='is_activate' name='is_activate' type='checkbox'>
+  </div>
+  <input type='submit' value='添加'>
+</form>
+{% endblock %}

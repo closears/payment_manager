@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}{% if active %}激活{% else %}冻结{ % endif %}用户{% endblock %}
+{% block content %}
+<form method='POST'>
+  <div>
+    {% if active %}激活{% else %}冻结{ % endif %}用户{{ user.name }}
+  </div>
+  <input type='submit' value='确定'>
+</form>
+{% endblock %}

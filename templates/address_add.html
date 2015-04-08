@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}添加地址{% endblock %}
+{% block content %}
+<form method='post'>
+  <div>
+    <label for='parent_id'>上级地址</label>
+    <select id='parent_id' name='parent_id'>
+      <option value=''>无</option>
+      {% for address in addresses %}
+      <option value='{{ address.id }}'>{{ address.name }}</option> 
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for='name'>名称</label>
+    <input type='text' name='name' id='name'/>
+  </div>
+  <div>
+    <label for='no'>编号</label>
+    <input type='text' name='no' id='no'/>
+  </div>
+  <input type='submit' value='添加'>
+</form>
+{% endblock %}

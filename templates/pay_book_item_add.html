@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}添加账目{% endblock %}
+{% block content %}
+<form method='POST'>
+  <div>
+    <label for='name'>名称</label>
+    <input id='name' name='name'>
+  </div>
+  <div>
+    <p>方向</p>
+    <label for='direct1'>借</label>
+    <input id='direct1' name='direct' type='radio' value='1'>
+    <label for='direct2'>贷</label>
+    <input id='direct2' name='direct' type='radio' value='-1'>
+  </div>
+  <div>
+    <label for='parent_id'>上级条目</label>
+    <select id='parent_id' name='parent_id'>
+      <option value="">None</option>
+      {% for item in items %}
+      <option value='{{ item.id }}'>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <input type='submit' value='增加'>
+</form>
+{% endblock %}

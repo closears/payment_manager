@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}银行卡绑定{% endblock %}
+{% block content %}
+<form method='POST'>
+  <div>待绑定银行卡:{{ bankcard }}</div>
+  <div>持卡人：{{ owner }}</div>
+  <input type='submit' value='绑定'>
+</form>
+{% endblock %}

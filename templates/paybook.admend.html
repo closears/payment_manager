@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}账目修正{% endblock %}
+{% block content %}
+<form method='POST'>
+  <div>
+    <p>账目详情</p>
+    <table>
+      <thead>
+	<tr>
+	  <th>身份证</th>
+	  <th>姓名</th>
+	  <th>银行卡</th>
+	  <th>金额</th>
+	</tr>
+      </thead>
+      <tbody>
+	{% for paybook in paybooks %}
+	<tr>
+	  <td>{{ paybook.person.idcard }}</td>
+	  <td>{{ paybook.person.name }}</td>
+	  <td>{{ paybook.bankcard.no }}</td>
+	  <td>{{ paybook.money }}</td>
+	</tr>
+	{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <label for='bankcard'>银行卡</label>
+    <input id='bankcard' name='bankcard'>
+  </div>
+  <div>
+    <label for='money'>金额</label>
+    <input id='money' name='money'>
+  </div>
+  <input type='submit' value='修改'>
+</form>
+{% endblock %}

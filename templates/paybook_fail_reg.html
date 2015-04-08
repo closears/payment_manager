@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}银行发放失败登记{% endblock %}
+{% block content %}
+<form mehtod='POST'>
+  <p>支付期:{{ peroid }}</p>
+  <p>银行卡：{{ bankcard }}</p>
+  <div>
+    <label for='money'>失败金额</label>
+    <input id='money' name='money' value='{{ money }}'>
+  </div>
+  <input type='submit' value='登记'>
+</form>
+{% endblock %}

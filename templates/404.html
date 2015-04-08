@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}出错了{% endblock %}
+{% block content %}
+<div>
+  <p>sorry,not find! detail:</p>
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <ul class='messages'>
+    {% for message in messages %}
+    <li>{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% endwith %}
+  <a href="{{ session.back_url }}">返回</a>
+</div>
+{% endblock %}

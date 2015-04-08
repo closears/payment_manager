@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}禁止访问{% endblock %}
+{% block content %}
+<div>
+  <p>sorry,you can not access! detail:</p>
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <ul class='messages'>
+    {% for message in messages %}
+    <li>{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% endwith %}
+  <a href="{{ session.back_url }}">返回</a>
+</div>
+{% endblock %}

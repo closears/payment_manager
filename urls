@@ -1,0 +1,6 @@
+address/add/
+address/delete/<pk>
+address/update/<pk>
+address/update/
+address/<pk>
+addresses/page=<page>&size=<size>

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}增加人员{% endblock %}
+{% block content %}
+<form method='POST'>
+  <div>
+    <label id='idcard'>身份证号</label>
+    <input id='idcard' name='idcard'>
+  </div>
+  <div>
+    <label id='name'>姓名</label>
+    <input id='name' name='name'>
+  </div>
+  <div>
+    <label id='address_id'>地址</label>
+    <select id='address_id' name='address_id'>
+      {% for address in addresses %}
+      <option value='{{ address.id }}'>{{ address.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label id='address_detail'>详细地址</label>
+    <input id='address_detail' name='address_detail'>
+  </div>
+  <div>
+    <label id='securi_no'>社保编号</label>
+    <input id='securi_no' name='securi_no'>
+  </div>
+  <div>
+    <label id='personal_wages'>个人待遇</label>
+    <input id='personal_wages' name='personal_wages'>
+  </div>
+<input type='submit' value='增加'>
+</form>
+{% endblock %}

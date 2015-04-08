@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}更新地址{% endblock %}
+{% block content %}
+<form method='POST'>
+  <div>
+    <label for='parent_id'>上级地址</label>
+    <select name='parent_id' id='parent_id'>
+      <option value=''>无</option>
+      {%if address.parent %}
+      <option value='{{ address.parent.id }}' selected='selected'>{{ address.parent.name }}</option>
+      {% endif %}
+      {% for parent in address_list %}
+      <option value='{{ parent.id }}'>{{parent.name}}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for='name'>名称</label>
+    <input name='name' value='{{ address.name }}' id='name'>
+  </div>
+  <div>
+    <label for='no'>编号</label>
+    <input name='no' value='{{ address.no }}' id='no'>
+  </div>
+  <input type='submit' value='修改'>
+</form>
+{% endblock %}

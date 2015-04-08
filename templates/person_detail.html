@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}人员详情{% endblock %}
+{% block content %}
+<div>
+  <span>身份证号:</span><span>{{ person.idcard }}</span>
+</div>
+<div>
+  <span>出生日期:</span><span>{{ person.birthday.strftime('%Y-%m-%d') }}</span>
+</div>
+<div>
+  <span>姓名:</span><span>{{ person.name }}</span>
+</div>
+<div>
+  <span>地址:</span><span>{{ person.address.name }}</span>
+</div>
+<div>
+  <span>详细地址:</span><span>{{ person.address_detail }}</span>
+</div>
+<div>
+  <span>社保编号:</span><span>{{ person.securi_no }}</span>
+</div>
+<div>
+  <span>个人待遇:</span><span>{{ person.personal_wages }}</span>
+</div>
+<div>
+  <span>状态:</span><span>{{ person.status }}</span>
+</div>
+{% if person.retire_day %}
+<div>
+  <span>退休日期:</span><span>{{ person.retire_day.strftime('%Y-%m-%d') }}</span>
+</div>
+{% endif %}
+{% if person.dead_day %}
+<div>
+  <span>死亡日期:</span><span>{{ person.dead_day.srtftime('%Y-%m-%d') }}</span>
+</div>
+{% endif %}
+{% endblock %}
