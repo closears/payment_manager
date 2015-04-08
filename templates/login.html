@@ -2,13 +2,14 @@
 {% block title %}登陆{% endblock %}
 {% block content %}
 <form method='POST'>
+  {{ form.hidden_tag() }}
   <div>
-    <label for='name'>用户名:</label>
-    <input id='name' name='name'>
+    {{ form.name.label }}
+    {{ form.name }}
   </div>
   <div>
-    <label for='password'>密码</label>
-    <input type='password' id='password' name='password'>
+    {{ form.password.label}}
+    {{ form.password }}
   </div>
   <input type='submit' value='登陆'>
 </form>

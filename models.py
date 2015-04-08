@@ -102,7 +102,8 @@ class Address(db.Model):
     no = db.Column(db.String(length=11), unique=True, nullable=False)
     name = db.Column(db.String, unique=True, nullable=False)
     parent_id = db.Column(db.Integer, db.ForeignKey('addresses.id'))
-    parent = db.relationship('Address', backref='childs')
+    parent = db.relationship(
+        'Address', backref='childs', remote_side=[id])
 
     def __repr__(self):
         return "<Address(name='{name}',parent={parent},no='{no}')>".format(
@@ -321,13 +322,13 @@ class PersonAgeError(RuntimeError):
 
 class PersonStatus(object):
     STATUS_CHOICES = (
-        (unicode('normal-unretire'), unicode('正常参保')),
-        (unicode('dead-unretire'), unicode('在职死亡')),
-        (unicode('abort-unretire'), unicode('在职终止')),
-        (unicode('normal-retire'), unicode('退休')),
-        (unicode('dead-retire'), unicode('退休死亡')),
-        (unicode('suspend-retire'), unicode('退休暂停')),
-        (unicode('registed'), unicode('登记'))
+        (unicode('normal-unretire'), ('正常参保')),
+        (unicode('dead-unretire'), ('在职死亡')),
+        (unicode('abort-unretire'), ('在职终止')),
+        (unicode('normal-retire'), ('退休')),
+        (unicode('dead-retire'), ('退休死亡')),
+        (unicode('suspend-retire'), ('退休暂停')),
+        (unicode('registed'), ('登记'))
     )
     (NORMAL, DEAD_UNRETIRE, ABROT_UNRETIRE, NORMAL_RETIRE, DEAD_RETIRE,
      SUSPEND_RETIRE, REG) = range(len(STATUS_CHOICES))
@@ -415,9 +416,10 @@ class PayBookItem(db.Model):
     __tablename__ = 'paybookitems'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, unique=True, nullable=False)
-    parent_id = db.Column(db.Integer, db.ForeignKey('paybookitems.id'))
     direct = db.Column(db.Integer, nullable=False)
-    parent = db.relationship('PayBookItem', backref='childs')
+    parent_id = db.Column(db.Integer, db.ForeignKey('paybookitems.id'))
+    parent = db.relationship(
+        'PayBookItem', backref='childs', remote_side=[id])
 
     DEFAULT_ITEMS = (
         PAY, INTER_BANK, BANK, OUGHT_PAY, INCOME, SYS, REMEND, INTER_BANK_FAIL,

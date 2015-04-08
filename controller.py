@@ -1,4 +1,4 @@
-from sqlalchemy import NoResultFound
+from sqlalchemy.orm.exc import NoResultFound
 import flask
 from flask import (
     render_template, session, request, flash, abort, redirect, current_app)
@@ -7,12 +7,14 @@ from flask_principal import (
     Principal, Permission, Need, UserNeed, RoleNeed, identity_loaded,
     identity_changed, Identity)
 from models import app, User, Address, Person, OperationLog
+from flask_wtf.csrf import CsrfProtect
 from forms import LoginForm
 
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+CsrfProtect(app)
 Principal(app)
 admin_required = Permission(RoleNeed('admin')).require()
 
@@ -104,21 +106,18 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 @OperationLog.log_template()
 def login():
+    form = LoginForm(request.form)
     if request.method == 'GET':
-        return render_template('login.html')
-
-    def _redirect():
-        return redirect(
-            '/login?next={}'.format(request.args.get('next') or '/'))
+        return render_template('login.html', form=form)
+    redirect_url = '/login?next={}'.format(request.args.get('next') or '/')
     token = User()
-    form = LoginForm(request.form, obj=user)
     form.populate_obj(token)
     try:
         user = User.query.filter(User.name == token.name).one()
         if token != user:
-            return _redirect()
+            return redirect(redirect_url)
     except NoResultFound:
-        return _redirect()
+        return redirect(redirect_url)
     login_user(user)
     identity_changed.send(
         current_app._get_current_object(),
