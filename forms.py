@@ -1,20 +1,25 @@
-from wtforms import TextField, PasswordField, Required
-from wtforms_alchemy import ModelForm
-from models import User
+from flask_wtf import Form
+from wtforms_alchemy import model_form_factory
+from wtforms import PasswordField, Required
+from models import db, User
+
+BaseModelForm = model_form_factory(Form)
+
+
+class ModelForm(BaseModelForm):
+    @classmethod
+    def get_session(cls):
+        return db.session
 
 
 class LoinForm(ModelForm):
     class Meta:
         model = User
         only = ['name', 'password']
+        strip_string_fields = True
     password = PasswordField('password', validators=[Required()])
 
 
 class UserForm(ModelForm):
     class Meta:
         model = User
-
-
-def class_info():
-    print(dir(Form))
-    print(TextField)

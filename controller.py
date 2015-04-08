@@ -7,6 +7,7 @@ from flask_principal import (
     Principal, Permission, Need, UserNeed, RoleNeed, identity_loaded,
     identity_changed, Identity)
 from models import app, User, Address, Person, OperationLog
+from forms import LoginForm
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -109,12 +110,11 @@ def login():
     def _redirect():
         return redirect(
             '/login?next={}'.format(request.args.get('next') or '/'))
+    token = User()
+    form = LoginForm(request.form, obj=user)
+    form.populate_obj(token)
     try:
-        token = User(
-            name=request.form['name'],
-            password=request.form['password']
-        )
-        user = User.query.filter(User.name == request.form['name']).one()
+        user = User.query.filter(User.name == token.name).one()
         if token != user:
             return _redirect()
     except NoResultFound:
