@@ -2,7 +2,8 @@ from sqlalchemy.orm.exc import NoResultFound
 import flask
 from flask import (
     render_template, session, request, flash, abort, redirect, current_app)
-from flask_login import LoginManager, current_user, login_required, login_user
+from flask_login import (
+    LoginManager, current_user, login_required, login_user, logout_user)
 from flask_principal import (
     Principal, Permission, Need, UserNeed, RoleNeed, identity_loaded,
     identity_changed, Identity)
@@ -46,7 +47,7 @@ def on_identity_loaded(sender, identity):
     if hasattr(current_user, 'roles'):
         for role in current_user.roles:
             identity.provides.add(RoleNeed(role.name))
-    if hasattr(current_user, 'address'):
+    if hasattr(current_user, 'address') and current_user.address:
         ids = [address.id for address in current_user.address.descendants()]
         Address.query = Address.query.filter(Address.id.in_(ids))
         Person.query = Person.query.filter(Person.address_id.in_(ids))
@@ -107,22 +108,51 @@ def index():
 @OperationLog.log_template()
 def login():
     form = LoginForm(request.form)
-    if request.method == 'GET':
-        return render_template('login.html', form=form)
-    redirect_url = '/login?next={}'.format(request.args.get('next') or '/')
-    token = User()
-    form.populate_obj(token)
-    try:
-        user = User.query.filter(User.name == token.name).one()
-        if token != user:
+    if request.method == 'POST' and form.validate():
+        token = User()
+        form.populate_obj(token)
+        redirect_url = '/login?next={}'.format(request.args.get('next') or '/')
+        try:
+            user = User.query.filter(User.name == token.name).one()
+            if token != user:
+                return redirect(redirect_url)
+        except NoResultFound:
             return redirect(redirect_url)
-    except NoResultFound:
-        return redirect(redirect_url)
-    login_user(user)
-    identity_changed.send(
-        current_app._get_current_object(),
-        identity=Identity(user.id))
-    OperationLog.log()
-    return redirect(request.args.get('next') or '/')
+        login_user(user)
+        identity_changed.send(
+            current_app._get_current_object(),
+            identity=Identity(user.id))
+        OperationLog.log(user=current_user)
+        return redirect(request.args.get('next') or '/')
+    return render_template('login.html', form=form)
 
-print(app)
+
+@app.route('/logout', methods=['GET'])
+@login_required
+@OperationLog.log_template()
+def logout():
+    logout_user()
+    OperationLog.log(user=current_user)
+    return redirect('/login')
+
+
+@app.route('/user/changepassword', methods=['GET', 'POST'])
+@login_required
+@OperationLog.log_template()
+def user_changpassword():
+    user = User.query.filter(User.id == current_user.id).one()
+    print(user)
+
+
+@app.route(
+    '/admin/changepassword?user-id=<int:pk>', methods=['GET', 'POST'])
+@admin_required
+def admin_changepassword(pk):
+    pass
+
+
+@app.route()
+@admin_required
+@OperationLog.log_template()
+def address_add():
+    pass

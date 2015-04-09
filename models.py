@@ -70,10 +70,12 @@ class User(db.Model):
         return False
 
     def __eq__(self, other):
+        if other is None:
+            return False
         return self.name == other.name and self.password == other.password
 
     def __ne__(self, other):
-        return self.name != other.name or self.password != other.password
+        return not self.__eq__(other)
 
     @hybrid_property
     def password(self):
@@ -648,8 +650,8 @@ class OperationLog(db.Model):
 
     @classmethod
     def log(cls, *args, **kwargs):
-        if not kwargs.get('current_user', None):
-            raise KeyError(unicode('current_user is need'))
+        if not kwargs.get('user', None):
+            raise KeyError(unicode('user is need'))
         import sys
         method = sys._getframe(1).f_code.co_name
         if method == "<module>":
@@ -660,9 +662,9 @@ class OperationLog(db.Model):
             template_name = args[0].__name__
         else:
             template_name = str(args[0])
-            template = cls.__log_templates.get(template_name, None)
+        template = cls.__log_templates.get(template_name, None)
         return cls(
-            operator=kwargs['current_user'],
+            operator=kwargs['user'],
             method=method,
             remark=template.render(**kwargs) if template else None
         )
@@ -675,12 +677,22 @@ class Note(db.Model):
     parent = db.relationship('Person', backref='notices')
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date)
+    content = db.Column(db.String, nullable=False)
+    _effective = db.Column(db.Boolean, nullable=False, default=True)
 
     @hybrid_property
     def effective(self):
         return and_(
             self.end_date.isnot(None),
-            self.start_date <= datetime.datetime.now())
+            self.start_date <= datetime.datetime.now(),
+            self._effective
+        )
+
+    def disable(self):
+        self._effective = False
+
+    def finish(self):
+        self.end_date = datetime.datetime.now()
 
 
 def test():

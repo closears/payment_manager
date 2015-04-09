@@ -1,31 +1,31 @@
-'''
 import os
 import tempfile
-import unittest
-
-
-class FlaskrTestCase(unittest.TestCase):
-
-    def setUp(self):
-        os.environ['FLASKR_SETTINGS'] = 'config.cfg'
-        self.db_fd, flaskr.app.config['DATABASE'] = tempfile.mkstemp()
-        flaskr.app.config['TESTING'] = True
-        self.app = flaskr.app.test_client()
-
-    def tearDown(self):
-        os.close(self.db_fd)
-        os.unlink(flaskr.app.config['DATABASE'])
-
-    def test_not_empty(self):
-        assert self.app.get('/') is not None
-'''
 import re
 import unittest
-from flask import request
+from flask import request, url_for
 from sqlalchemy.orm.exc import NoResultFound
 from wtforms_alchemy import ModelForm
 from controller import app
 from models import db, User
+from forms import LoginForm
+
+
+class Utils(object):
+
+    class __Tempfile(object):
+
+        def __init__(self):
+            self.fd, self.filename = None, None
+
+        def mktemp(self):
+            self.fd, self.filename = tempfile.mkstemp()
+            return self
+
+        def close(self):
+            os.close(self.fd)
+            os.unlink(self.filename)
+
+    tempFileMaker = __Tempfile()
 
 
 class UserForm(ModelForm):
@@ -52,12 +52,14 @@ def test():
 class UserTestCase(unittest.TestCase):
     def setUp(self):
         app.config.from_pyfile('config.cfg', silent=True)
+        app.config['WTF_CSRF_ENABLED'] = False
+        app.config['CSRF_ENABLED'] = False
         try:
             user = User.query.filter(User.name == 'admin').one()
         except NoResultFound:
             user = User(name='admin', password='admin')
-        db.session.add(user)
-        db.session.commit()
+            db.session.add(user)
+            db.session.commit()
         self.client = app.test_client()
 
     def tearDown(self):
@@ -77,9 +79,43 @@ class UserTestCase(unittest.TestCase):
         with app.test_request_context():
             with self.client as c:
                 rv = c.post(
+                    url_for('login'),
+                    data=dict(name='admin', password='admin'))
+                assert rv.data
+                assert rv.status_code == 302
+
+    def testLoginForm(self):
+        with app.test_request_context():
+            with self.client as c:
+                c.post(
+                    url_for('login'),
+                    data=dict(name='admin', password='admin'))
+                from werkzeug import MultiDict
+                form = LoginForm(
+                    MultiDict([('name', 'admin'), ('password', 'admin')]))
+                assert form.validate()
+                user = User()
+                form.populate_obj(user)
+                assert user.name
+                assert user.password
+                assert user.is_active
+                assert not user.roles
+
+    def testLogout(self):
+        with app.test_request_context():
+            with self.client as c:
+                rv = c.get('/index.html')
+                assert rv.status_code == 302
+                assert 'login' in rv.data
+                c.post(
                     '/login', data=dict(name='admin', password='admin'))
+                rv = c.get('/index.html')
                 assert rv.status_code == 200
+                c.get('/logout')
+                rv = c.get('index.html')
+                assert rv.status_code == 302
 
 
 def run_test():
+    db.create_all()
     unittest.main()
