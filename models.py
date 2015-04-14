@@ -606,8 +606,8 @@ class PayBook(db.Model):
             )
         return (record(_item, _bankcard, _money)
                 for _item, _bankcard, _money in(
-                        (self.item, self.bankcard, -self.money),
-                        (forward_item, bankcard, self.money)))
+                    (self.item, self.bankcard, -self.money),
+                    (forward_item, bankcard, self.money)))
 
 
 class OperationLog(db.Model):
