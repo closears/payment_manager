@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}添加用户{% endblock %}
+{% block content %}
+<form method='POST'>
+  {{ form.hidden_tag() }}
+  <div>
+    {{ form.name.label }}{{form.name }}
+  </div>
+  <div>
+    {{ form.password.label }}{{ form.password }}
+  </div>
+  <div>
+    {{ form.active.label }}{{ form.active }}
+  </div>
+  <input type='submit' value='增加'>
+</form>
+{% endblock %}

@@ -10,7 +10,7 @@ from flask_principal import (
     identity_changed, Identity)
 from models import app, db, User, Address, Person, OperationLog
 from flask_wtf.csrf import CsrfProtect
-from forms import LoginForm, ChangePasswordForm
+from forms import LoginForm, ChangePasswordForm, UserForm
 
 
 class RegexConverter(BaseConverter):
@@ -158,41 +158,81 @@ def user_changpassword():
     form = ChangePasswordForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         user = User.query.filter(User.id == current_user.id).one()
-        user.password = form.data['newpassword']
+        if User(password=form.oldpassword.data).password != user.password:
+            logout_user()
+            return redirect('/login')
+        form.populate_obj(user)
         db.session.commit()
+        identity_changed.send(
+            current_app._get_current_object(),
+            identity=Identity(user.id))
         return 'success'
-    return render_template(
-        'changepassword',
-        form=ChangePasswordForm(),
-        user=current_user)
+    return render_template('changepassword.html', form=form)
 
 
 @app.route('/admin/user/add', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ user.id }}')
 def admin_add_user():
-    pass
+    form = UserForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        user = User()
+        form.populate_obj(user)
+        db.session.add(user)
+        db.session.commit()
+        return 'success'
+    return render_template('/admin_add_user.html', form=form)
 
 
 @app.route('/admin/user/<int:pk>/remove', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ user.name }}')
 def admin_remove_user(pk):
-    pass
+    try:
+        user = User.query.filter(User.id == pk).one()
+    except NoResultFound:
+        flash(unicode('no user find with pk:{}').format(pk))
+        abort(404)
+    if request.method == 'GET':
+        return render_template(
+            'admin_remove_user.html', form=UserForm(obj=user))
+    db.session.delete(user)
+    db.session.commit()
+    return 'success'
 
 
 @app.route('/admin/user/<int:pk>/inactivate', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ user.id }}')
-def admin_user_inactivae(pk):
-    pass
+def admin_user_inactivate(pk):
+    try:
+        user = User.query.filter(User.id == pk).one()
+    except NoResultFound:
+        flash(unicode('no user find with pk:{}').format(pk))
+        abort(404)
+    if request.method == 'GET':
+        return render_template(
+            'admin_user_inactivate.html', form=UserForm(obj=user))
+    user.active = False
+    db.session.commit()
+    return 'success'
 
 
 @app.route('/admin/user/<int:pk>/activate', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ user.id }}')
 def admin_user_activate(pk):
-    pass
+    try:
+        user = User.query.filter(User.id == pk).one()
+    except NoResultFound:
+        flash(unicode('no user find with pk:{}').format(pk))
+        abort(404)
+    if request.method == 'GET':
+        return render_template(
+            'admin_user_activate.html', form=UserForm(obj=user))
+    user.active = True
+    db.session.commit()
+    return 'success'
 
 
 @app.route(
@@ -200,7 +240,16 @@ def admin_user_activate(pk):
 @admin_required
 @OperationLog.log_template('{{ user.id }}')
 def admin_user_changepassword(pk):
-    pass
+    try:
+        user = User.query.filter(User.id == pk).one()
+    except NoResultFound:
+        flash('no user find by pk:{}'.format(pk))
+        abort(404)
+    form = ChangePasswordForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        form.populate_obj(user)
+        db.session.commit()
+    return render_template('admin_user_changepassword.html', form=form)
 
 
 @app.route(

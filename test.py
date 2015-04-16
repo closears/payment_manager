@@ -6,7 +6,7 @@ from flask import request, url_for
 from sqlalchemy.orm.exc import NoResultFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
-from models import User
+from models import User, Role
 from forms import LoginForm
 
 
@@ -54,9 +54,7 @@ def test():
             assert rv.status_code == 200
 
 
-class UserTestCase(TestCase):
-    SQLALCHEMY_DATABASE_URI = 'sqlite://'
-    TESTING = True
+class TestBase(TestCase):
 
     def create_app(self):
         app.config.from_pyfile('config.cfg', silent=True)
@@ -65,7 +63,6 @@ class UserTestCase(TestCase):
         return app
 
     def setUp(self):
-        self.create_app()
         db.create_all()
         try:
             user = User.query.filter(User.name == 'admin').one()
@@ -78,62 +75,153 @@ class UserTestCase(TestCase):
         db.session.remove()
         db.drop_all()
 
-    def testLoginGet(self):
+    def assert_authorized(self):
+        rv = self.client.get('/index.html')
+        self.assert200(rv)
 
+    def assert_not_authorized(self):
+        rv = self.client.get('/index.html')
+        self.assert_status(rv, 302)
+
+
+class UserTestCase(TestBase):
+    SQLALCHEMY_DATABASE_URI = 'sqlite://'
+    TESTING = True
+
+    def testLoginGet(self):
         rv = self.client.get('/login')
         assert '<input' in rv.data
         assert 'name=' in rv.data
         self.assert_200(rv)
+        self.assert_not_authorized()
 
     def testLoginPost(self):
-        assert not Utils.is_authorized(self.client)
+        self.assert_not_authorized()
         rv = self.client.post(
             url_for('login', next='/success'),
             data=dict(name='admin', password='admin'))
         self.assert_status(rv, 302)
-        assert Utils.is_authorized(self.client)
+        self.assert_authorized()
 
     def testLoginForm(self):
         from werkzeug import MultiDict
         form = LoginForm(
             MultiDict([('name', 'admin'), ('password', 'admin')]))
-        assert form.validate()
+        self.assertTrue(form.validate())
         user = User()
         form.populate_obj(user)
-        assert user.name
-        assert user.password
-        assert user.is_active
-        assert not user.roles
+        self.assertEqual(user.name, 'admin')
+        self.assertEqual(User(password='admin').password, user.password)
+        self.assertTrue(user.is_active)
+        self.assertTrue(not user.roles)
 
     def testLogout(self):
-        rv = self.client.get('/index.html')
-        self.assert_status(rv, 302)
-        assert 'login' in rv.data
+        self.assert_not_authorized()
         self.client.post(
             url_for('login', next='/success'),
             data=dict(name='admin', password='admin'))
-        assert Utils.is_authorized(self.client)
+        self.assert_authorized()
         self.client.get('/logout')
-        assert not Utils.is_authorized(self.client)
+        self.assert_not_authorized()
 
     def testChangePassword(self):
         self.client.get('/logout')
         rv = self.client.get('/user/changepassword')
         self.assert_status(rv, 302)
-        rv = self.client.post(
+        self.client.post(
             '/login', data=dict(name='admin', password='admin'))
-        assert Utils.is_authorized(self.client)
-        rv = self.client.post(
-            '/user/changepassword',
-            data=dict(
-                oldpassword='admin',
-                newpassword='123123',
-                confirm='123123')
-        )
-        self.assert200(rv)
-        assert Utils.is_authorized(self.client)
+        self.assert_authorized()
+        self.client.get('/user/changepassword')
+        self.assert_template_used('changepassword.html')
+        data = dict(
+            oldpassword='admin',
+            newpassword='123123',
+            confirm='12312')
+        self.client.post('/user/changepassword', data=data)
+        self.assert_template_used('changepassword.html')
+        self.assertNotIn('success', rv.data)
+        self.assert_authorized()
+        data.update(confirm='123123')
+        self.client.post('/user/changepassword', data=data)
+        self.assert_authorized()
         user = User.query.filter(User.name == 'admin').one()
-        assert user == User(name='admin', password='123123')
+        self.assertEqual(User(password='123123').password, user.password)
+        data.update(oldpassword='admin')
+        self.client.post('/user/changepassword', data=data)
+        self.assert_not_authorized()
+        self.client.post(
+            '/login', data=dict(name='admin', password='123123'))
+        self.assert_authorized()
+        data.update(oldpassword='123123', newpassword='admin', confirm='admin')
+        self.client.post(
+            '/user/changepassword', data=data)
+
+
+class AdminTestCase(TestBase):
+
+    def setUp(self):
+        super(AdminTestCase, self).setUp()
+        user = User.query.filter(User.name == 'admin').one()
+        user.roles.append(Role(name='admin'))
+        db.session.commit()
+
+    def test_user_form(self):
+        print(UserForm().data)
+
+    def test_add_user(self):
+        self.assert_not_authorized()
+        self.client.post(
+            '/login', data=dict(name='admin', password='admin'))
+        self.assert_authorized()
+        rv = self.client.get('/admin/user/add')
+        self.assertIn('<form', rv.data)
+        self.client.post(
+            '/admin/user/add', data=dict(
+                name='test',
+                password='test',
+                active=True
+            ))
+        user = User.query.filter(User.name == 'test').one()
+        self.assertEqual(user.name, 'test')
+
+    def test_remove_user(self):
+        self.assert_not_authorized()
+        self.client.post(
+            '/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get('/admin/user/add')
+        self.assertIn('<form', rv.data)
+        self.client.post(
+            '/admin/user/add', data=dict(
+                name='test2',
+                password='test2',
+                active=True))
+        user = User.query.filter(User.name == 'test2').one()
+        self.client.post(url_for('admin_remove_user', pk=user.id))
+        self.assertTrue(not User.query.filter(User.name == 'test2').all())
+        rv = self.client.post(url_for('admin_remove_user', pk=user.id))
+        self.assert404(rv)
+
+    def test_admin_user_inactivate(self):
+        self.assert_not_authorized()
+        self.client.post('/login', data=dict(
+            name='admin',
+            password='admin'))
+        self.assert_authorized()
+        user = User(name='test', password='test')
+        db.session.add(user)
+        db.session.commit()
+        self.assertTrue(user.active)
+        rv = self.client.get(url_for('admin_user_inactivate', pk=user.id))
+        self.assertIn('submit', rv.data)
+        self.client.post(url_for('admin_user_inactivate', pk=user.id))
+        user = User.query.get(user.id)
+        self.assertFalse(user.active)
+        rv = self.client.post(url_for('admin_user_activate', pk=user.id))
+        self.assertIn('success', rv.data)
+        user = User.query.get(user.id)
+        self.assertTrue(user.active)
+        db.session.delete(user)
+        db.session.commit()
 
 
 def run_test():

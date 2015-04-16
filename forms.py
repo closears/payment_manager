@@ -24,10 +24,17 @@ class ChangePasswordForm(Form):
     confirm = PasswordField(
         u'confirm password', validators=[EqualTo('newpassword')])
 
+    def populate_obj(self, user, name=None):
+        if name:
+            user.name = name
+        user.password = self.newpassword.data
+        return user
+
 
 class UserForm(ModelForm):
     class Meta:
         model = User
+    password = PasswordField('password', validators=[Required()])
 
 
 class AddressForm(ModelForm):

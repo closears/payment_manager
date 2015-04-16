@@ -1,0 +1,30 @@
+# -*- mode: snippet; require-final-newline: nil -*-
+# name: 
+# key: 
+# binding: direct-keybinding
+# --
+
+#name : {% %}
+# --
+{% $0 %}
+
+#name : {% for %}
+# --
+{% for $1 in $2 %}
+   $0
+{% endfor %}
+
+#name : {% if %}
+# --
+{% if $0 %}
+{% else %}
+{% endif %}
+
+#name : {% block %}
+# --
+{% block $0 %}
+{% endblock %}
+
+#name :{% extends %}
+# --
+{% extends '$0' %}
