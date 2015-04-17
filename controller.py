@@ -1,5 +1,6 @@
 from sqlalchemy.orm.exc import NoResultFound
 from werkzeug.routing import BaseConverter
+from werkzeug.datastructures import MultiDict
 import flask
 from flask import (
     render_template, session, request, flash, abort, redirect, current_app)
@@ -10,7 +11,7 @@ from flask_principal import (
     identity_changed, Identity)
 from models import app, db, User, Address, Person, OperationLog
 from flask_wtf.csrf import CsrfProtect
-from forms import LoginForm, ChangePasswordForm, UserForm
+from forms import LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm
 
 
 class RegexConverter(BaseConverter):
@@ -245,7 +246,10 @@ def admin_user_changepassword(pk):
     except NoResultFound:
         flash('no user find by pk:{}'.format(pk))
         abort(404)
-    form = ChangePasswordForm(request.form)
+    init_data = MultiDict()
+    init_data.update(request.form)
+    init_data.update({'oldpassword': 'empty'})
+    form = ChangePasswordForm(init_data)
     if request.method == 'POST' and form.validate_on_submit():
         form.populate_obj(user)
         db.session.commit()
@@ -257,7 +261,16 @@ def admin_user_changepassword(pk):
 @admin_required
 @OperationLog.log_template('{{ user.id }},{{ newroles }}')
 def admin_user_add_role(pk):
-    pass
+    try:
+        user = User.query.filter(User.id == pk).one()
+    except NoResultFound:
+        flash('no user find with pk:{}'.format(pk))
+        abort(404)
+    form = AdminAddRoleForm(user, formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        form.populate_obj(user)
+        db.session.commit()
+    return render_template('admin_user_add_role.html', form=form, user=user)
 
 
 @app.route(

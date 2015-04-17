@@ -7,7 +7,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
 from models import User, Role
-from forms import LoginForm
+from forms import LoginForm, AdminAddRoleForm
 
 
 class Utils(object):
@@ -221,6 +221,58 @@ class AdminTestCase(TestBase):
         user = User.query.get(user.id)
         self.assertTrue(user.active)
         db.session.delete(user)
+        db.session.commit()
+
+    def test_admin_user_changpassword(self):
+        self.client.post('/login', data=dict(
+            name='admin', password='admin'))
+        self.assert_authorized()
+        user = User(name='test', password='test')
+        db.session.add(user)
+        db.session.commit()
+        rv = self.client.get(url_for('admin_user_changepassword', pk=user.id))
+        self.assertIn('<form', rv.data)
+        rv = self.client.get(url_for('admin_user_changepassword', pk=100))
+        self.assert404(rv)
+        self.client.post(
+            url_for('admin_user_changepassword', pk=user.id),
+            data=dict(newpassword='123123', confirm='123123')
+        )
+        user = User.query.get(user.id)
+        self.assertEqual(User(password='123123').password, user.password)
+        db.session.delete(user)
+        db.session.commit()
+
+    def test_admin_user_add_role_form(self):
+        role = Role(name='test')
+        db.session.add(role)
+        db.session.commit()
+        user = User.query.filter(User.name == 'admin').one()
+        form = AdminAddRoleForm(user=user)
+        self.assertIn('test', form.role())
+        db.session.delete(role)
+        db.session.commit()
+
+    def test_admin_user_add_role(self):
+        user = User(name='test', password='test')
+        role = Role(name='test')
+        db.session.add(role)
+        db.session.add(user)
+        db.session.commit()
+
+        self.client.post('/login', data=dict(
+            name='admin',
+            password='admin'))
+        self.assert_authorized()
+        rv = self.client.get(url_for('admin_user_add_role', pk=user.id))
+        self.assertIn('option', rv.data)
+        self.client.post(url_for('admin_user_add_role', pk=user.id),
+                         data=dict(
+            role=role.id))
+        # user = User.query.get(user.id)
+        # self.assertIn(role, user.roles)
+        db.session.delete(user)
+        db.session.delete(role)
         db.session.commit()
 
 

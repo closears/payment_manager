@@ -13,6 +13,9 @@ from sqlalchemy.orm.exc import NoResultFound
 app = Flask(__name__)
 db = SQLAlchemy(app)
 
+__IMPLEMENT_DATE = datetime.date(2011, 7, 1)
+__MIN_ENGAGE_IN_AGE = 16
+
 
 class UserRoleAssoc(db.Model):
     __tablename__ = 'users_roles'
@@ -90,6 +93,12 @@ class Role(db.Model):
     __tablename__ = 'roles'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, nullable=False, unique=True)
+
+    def __eq__(self, other):
+        return other is not None and other.id == self.id
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def __repr__(self):
         return "<Role(name='name')>".format(self.name)
@@ -173,11 +182,11 @@ class PersonStandardAssoc(db.Model):
     def __repr__(self):
         return "<PersonStandardAssoc(standard={standard},person={person},\
         _start_date={start_date},_end_date={end_date})>".format(
-                    standard=repr(self.standard),
-                    person=repr(self.person),
-                    start_date=self.start_date,
-                    end_date=self.end_date
-                )
+            standard=repr(self.standard),
+            person=repr(self.person),
+            start_date=self.start_date,
+            end_date=self.end_date
+        )
 
     def __str__(self):
         return unicode("{person},{standard},{start_date},{end_date}").format(
@@ -229,7 +238,19 @@ class Person(db.Model):
         backref='persons',
         remote_side=[id]
     )
-    status = db.Column(db.String, nullable=False)
+    STATUS_CHOICES = (
+        (unicode('normal-unretire'), ('正常参保')),
+        (unicode('dead-unretire'), ('在职死亡')),
+        (unicode('abort-unretire'), ('在职终止')),
+        (unicode('normal-retire'), ('退休')),
+        (unicode('dead-retire'), ('退休死亡')),
+        (unicode('suspend-retire'), ('退休暂停')),
+        (unicode('registed'), ('登记'))
+    )
+    (NORMAL, DEAD_UNRETIRE, ABROT_UNRETIRE, NORMAL_RETIRE, DEAD_RETIRE,
+     SUSPEND_RETIRE, REG) = range(len(STATUS_CHOICES))
+    status = db.Column(
+        db.String, nullable=False, info=STATUS_CHOICES)
     retire_day = db.Column(db.Date)
     dead_day = db.Column(db.Date)
     create_user_id = db.Column(
@@ -260,29 +281,36 @@ class Person(db.Model):
             status=self.status
         ))
 
-    @property
+    @hybrid_property
     def can_reg(self):
         now = datetime.datetime.now()
         return self.birthday > datetime.datetime(
-            now.year-16, now.month, now.day)
+            now.year - __MIN_ENGAGE_IN_AGE, now.month, now.day)
 
     @property
-    def retire_day_func(self):
+    def canretire(self):
+        return str(self.status) in (
+            Person.STATUS_CHOICES[Person.NORMAL][0],
+            Person.STATUS_CHOICES[Person.REG][0]
+        )
+
+    @property
+    def candead(self):
+        return str(self.status) in (
+            Person.STATUS_CHOICES[Person.NORMAL][0],
+            Person.STATUS_CHOICES[Person.REG][0],
+            Person.STATUS_CHOICES[Person.NORMAL_RETIRE][0],
+            Person.STATUS_CHOICES[Person.SUSPEND_RETIRE][0]
+        )
+
+    @property
+    def retire_day(self):
         retire_day = datetime.datetime(
             self.birthday.year + 60,
             self.birthday.month + 1,
             1
         )
-
-        def get_date(implement_date):
-            '''
-implement_date,社保制度开始实施时间
-'''
-            if isinstance(implement_date, (str,)):
-                implement_date = datetime.datetime.strptime(
-                    implement_date, '%Y-%m-%d')
-            return max(retire_day, implement_date)
-        return get_date
+        return max(retire_day, __IMPLEMENT_DATE)
 
     @property
     def birthday(self):
@@ -292,14 +320,6 @@ implement_date,社保制度开始实施时间
     def set_birthday(self, val):
         self._birthday = val
 
-    def dead(self, dead_day):
-        if PersonStatus.candead(self):
-            PersonStatus.dead(self)
-            self.dead_day = dead_day
-            return self.status
-        raise PersonStatusError(
-            unicode('status error,person can not be reg to dead'))
-
     def retire(self, retire_day):
         if PersonStatus.canretire(self):
             standard_retire_day = self.retire_day_func('2011-07-01')
@@ -308,10 +328,25 @@ implement_date,社保制度开始实施时间
             self.retire_day = standard_retire_day
             self.status = PersonStatus\
                 .STATUS_CHOICES[PersonStatus.NORMAL_RETIRE][0]
-            return self.status
         raise PersonStatusError(
-            unicode('status error, person can not be reg be retire')
-        )
+            unicode('status error, person can not be reg be retire'))
+        return self
+
+    def dead(self, dead_day):
+        if str(self.status) in (
+                Person.STATUS_CHOICES[Person.REG][0],
+                Person.STATUS_CHOICES[Person.NORMAL][0]
+        ):
+            self.status = Person.STATUS_CHOICES[Person.DEAD_UNRETIRE][0]
+        elif str(self.status) in (
+                Person.STATUS_CHOICES[Person.NORMAL_RETIRE][0],
+                Person.STATUS_CHOICES[Person.SUSPEND_RETIRE][0]
+        ):
+            self.status = Person.STATUS_CHOICES[Person.DEAD_RETIRE][0]
+        else:
+            raise PersonStatusError('person can not be dead')
+        self.dead_day = dead_day
+        return self
 
 
 class PersonStatusError(RuntimeError):
@@ -323,48 +358,7 @@ class PersonAgeError(RuntimeError):
 
 
 class PersonStatus(object):
-    STATUS_CHOICES = (
-        (unicode('normal-unretire'), ('正常参保')),
-        (unicode('dead-unretire'), ('在职死亡')),
-        (unicode('abort-unretire'), ('在职终止')),
-        (unicode('normal-retire'), ('退休')),
-        (unicode('dead-retire'), ('退休死亡')),
-        (unicode('suspend-retire'), ('退休暂停')),
-        (unicode('registed'), ('登记'))
-    )
-    (NORMAL, DEAD_UNRETIRE, ABROT_UNRETIRE, NORMAL_RETIRE, DEAD_RETIRE,
-     SUSPEND_RETIRE, REG) = range(len(STATUS_CHOICES))
-
-    @classmethod
-    def canretire(cls, person):
-        return str(person.status) in (
-            cls.STATUS_CHOICES[cls.NORMAL][0],
-            cls.STATUS_CHOICES[cls.REG][0]
-        )
-
-    @classmethod
-    def candead(cls, person):
-        return str(person.status) in (
-            cls.STATUS_CHOICES[cls.NORMAL][0],
-            cls.STATUS_CHOICES[cls.REG][0],
-            cls.STATUS_CHOICES[cls.NORMAL_RETIRE][0],
-            cls.STATUS_CHOICES[cls.SUSPEND_RETIRE][0]
-        )
-
-    @classmethod
-    def dead(cls, person):
-        if str(person.status) in (
-                cls.STATUS_CHOICES[cls.REG][0],
-                cls.STATUS_CHOICES[cls.NORMAL][0]
-        ):
-            person.status = cls.STATUS_CHOICES[cls.DEAD_UNRETIRE][0]
-        elif str(person.status) in (
-                cls.STATUS_CHOICES[cls.NORMAL_RETIRE][0],
-                cls.STATUS_CHOICES[cls.SUSPEND_RETIRE][0]
-        ):
-            person.status = cls.STATUS_CHOICES[cls.DEAD_RETIRE][0]
-        else:
-            raise PersonStatusError('person can not be dead')
+    pass
 
 
 class Standard(db.Model):
