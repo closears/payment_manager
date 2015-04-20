@@ -253,9 +253,11 @@ class AdminTestCase(TestBase):
         db.session.delete(role)
         db.session.commit()
 
-    def test_admin_user_add_role(self):
+    def test_admin_user_add_and_romove_role(self):
         user = User(name='test', password='test')
         role = Role(name='test')
+        role1 = Role(name='test1')
+        db.session.add(role1)
         db.session.add(role)
         db.session.add(user)
         db.session.commit()
@@ -265,13 +267,43 @@ class AdminTestCase(TestBase):
             password='admin'))
         self.assert_authorized()
         rv = self.client.get(url_for('admin_user_add_role', pk=user.id))
-        self.assertIn('option', rv.data)
+        self.assertIn('<select', rv.data)
         self.client.post(url_for('admin_user_add_role', pk=user.id),
-                         data=dict(
-            role=role.id))
-        # user = User.query.get(user.id)
-        # self.assertIn(role, user.roles)
+                         data=dict(role=role.id))
+        user = User.query.get(user.id)
+        self.assertIn(role, user.roles)
+        self.client.post(url_for('admin_user_add_role', pk=user.id),
+                         data=dict(role=role1.id))
+        user = User.query.get(user.id)
+        self.assertIn(role1, user.roles)
+        self.client.post(url_for('admin_user_remove_role', pk=user.id),
+                         data=dict(role=role1.id))
+        user = User.query.get(user.id)
+        self.assertNotIn(role1, user.roles)
+        user.roles = []
+        db.session.commit()
         db.session.delete(user)
+        db.session.delete(role)
+        db.session.delete(role1)
+        db.session.commit()
+
+    def test_admin_user_detail(self):
+        user = User.query.filter(User.name == 'admin').one()
+        role = Role(name='test')
+        db.session.add(role)
+        self.assert_not_authorized()
+        self.client.post('/login', data=dict(
+            name='admin',
+            password='admin'))
+        self.assert_authorized()
+        self.client.post(url_for('admin_user_add_role', pk=user.id),
+                         data=dict(role=role.id))
+        self.assertIn(role, user.roles)
+        rv = self.client.get(url_for('admin_user_detail', pk=user.id))
+        self.assertIn('admin', rv.data)
+        self.assertIn('test', rv.data)
+        user.roles.remove(role)
+        db.session.commit()
         db.session.delete(role)
         db.session.commit()
 

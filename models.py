@@ -95,7 +95,7 @@ class Role(db.Model):
     name = db.Column(db.String, nullable=False, unique=True)
 
     def __eq__(self, other):
-        return other is not None and other.id == self.id
+        return other and other.id == self.id
 
     def __ne__(self, other):
         return not self.__eq__(other)
@@ -643,25 +643,25 @@ class OperationLog(db.Model):
         return decorator
 
     @classmethod
-    def log(cls, *args, **kwargs):
-        if not kwargs.get('user', None):
-            raise KeyError(unicode('user is need'))
+    def log(cls, session, operator, template_key=None, **kwargs):
+        if session is None or operator is None:
+            raise ValueError('db session and operator is neeed!')
         import sys
         method = sys._getframe(1).f_code.co_name
         if method == "<module>":
             return EnvironmentError(unicode('can not run in module level'))
-        if not args:
+        if not template_key:
             template_name = method
-        elif callable(args[0]):
-            template_name = args[0].__name__
+        elif callable(template_key):
+            template_name = template_key.__name__
         else:
-            template_name = str(args[0])
+            template_name = str(template_key)
         template = cls.__log_templates.get(template_name, None)
-        return cls(
-            operator=kwargs['user'],
+        return session.add(cls(
+            operator=operator,
             method=method,
             remark=template.render(**kwargs) if template else None
-        )
+        ))
 
 
 class Note(db.Model):

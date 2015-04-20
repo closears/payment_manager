@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}remove roles {% endblock %}
+{% block content %}
+<ul>
+  {% for role in user.roles %}
+  <li> {{ role.name }}</li>
+  {% endfor %}
+</ul>
+<form method='POST'>
+  {{ form.hidden_tag() }}
+  <div>
+    {{ form.role.label }}
+    {{ form.role }}
+    <input type='submit' value='remove'>
+  </div>
+</form>
+{% endblock %}

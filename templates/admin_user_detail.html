@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}user detail {% endblock %}
+{% block content %}
+<p><span>name:</span><span>{{ user.name }}</span></p>
+{% if user.roles %}
+<ul>
+  {% for role in user.roles %}
+  <li>{{ role.name }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

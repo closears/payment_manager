@@ -11,7 +11,9 @@ from flask_principal import (
     identity_changed, Identity)
 from models import app, db, User, Address, Person, OperationLog
 from flask_wtf.csrf import CsrfProtect
-from forms import LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm
+from forms import (
+    LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
+    AdminRemoveRoleForm)
 
 
 class RegexConverter(BaseConverter):
@@ -54,7 +56,7 @@ def on_identity_loaded(sender, identity):
     identity.user = current_user
     if hasattr(current_user, 'id'):
         identity.provides.add(UserNeed(current_user.id))
-    if hasattr(current_user, 'roles'):
+    if hasattr(current_user, 'roles') and current_user.roles:
         for role in current_user.roles:
             identity.provides.add(RoleNeed(role.name))
     if hasattr(current_user, 'address') and current_user.address:
@@ -138,7 +140,7 @@ def login():
         identity_changed.send(
             current_app._get_current_object(),
             identity=Identity(user.id))
-        OperationLog.log(user=current_user)
+        OperationLog.log(db.session, current_user)
         return redirect(request.args.get('next') or '/')
     return render_template('login.html', form=form)
 
@@ -147,7 +149,7 @@ def login():
 @login_required
 @OperationLog.log_template()
 def logout():
-    OperationLog.log(user=current_user)
+    OperationLog.log(db.session, current_user)
     logout_user()
     return redirect('/login')
 
@@ -163,6 +165,7 @@ def user_changpassword():
             logout_user()
             return redirect('/login')
         form.populate_obj(user)
+        OperationLog.log(db.session, current_user)
         db.session.commit()
         identity_changed.send(
             current_app._get_current_object(),
@@ -180,6 +183,7 @@ def admin_add_user():
         user = User()
         form.populate_obj(user)
         db.session.add(user)
+        OperationLog.log(db.session, current_user, user=user)
         db.session.commit()
         return 'success'
     return render_template('/admin_add_user.html', form=form)
@@ -196,7 +200,9 @@ def admin_remove_user(pk):
         abort(404)
     if request.method == 'GET':
         return render_template(
-            'admin_remove_user.html', form=UserForm(obj=user))
+            'admin_remove_user.html', form=UserForm(obj=user)
+        )
+    OperationLog.log(db.session, current_user, user=user)
     db.session.delete(user)
     db.session.commit()
     return 'success'
@@ -214,6 +220,7 @@ def admin_user_inactivate(pk):
     if request.method == 'GET':
         return render_template(
             'admin_user_inactivate.html', form=UserForm(obj=user))
+    OperationLog.log(db.session, current_user, user=user)
     user.active = False
     db.session.commit()
     return 'success'
@@ -232,6 +239,7 @@ def admin_user_activate(pk):
         return render_template(
             'admin_user_activate.html', form=UserForm(obj=user))
     user.active = True
+    OperationLog.log(db.session, current_user, user=user)
     db.session.commit()
     return 'success'
 
@@ -252,6 +260,7 @@ def admin_user_changepassword(pk):
     form = ChangePasswordForm(init_data)
     if request.method == 'POST' and form.validate_on_submit():
         form.populate_obj(user)
+        OperationLog.log(db.session, current_user, user=user)
         db.session.commit()
     return render_template('admin_user_changepassword.html', form=form)
 
@@ -259,7 +268,7 @@ def admin_user_changepassword(pk):
 @app.route(
     '/admin/user/<int:pk>/addrole', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }},{{ newroles }}')
+@OperationLog.log_template('{{ user.id }},added_role:{{ form.role.data }}')
 def admin_user_add_role(pk):
     try:
         user = User.query.filter(User.id == pk).one()
@@ -269,6 +278,7 @@ def admin_user_add_role(pk):
     form = AdminAddRoleForm(user, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         form.populate_obj(user)
+        OperationLog.log(db.session, current_user, user=user, form=form)
         db.session.commit()
     return render_template('admin_user_add_role.html', form=form, user=user)
 
@@ -276,15 +286,30 @@ def admin_user_add_role(pk):
 @app.route(
     '/admin/user/<int:pk>/removerole', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }},{{ removed_roles }}')
+@OperationLog.log_template('{{ user.id }},removed_roles:{{ from.role.data }}')
 def admin_user_remove_role(pk):
-    pass
+    try:
+        user = User.query.filter(User.id == pk).one()
+    except NoResultFound:
+        flash('no user find with pk:{}'.format(pk))
+        abort(404)
+    form = AdminRemoveRoleForm(user, formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        form.populate_obj(user)
+        OperationLog.log(db.session, current_user, user=user, form=form)
+        db.session.commit()
+    return render_template('admin_user_remove_role.html', form=form, user=user)
 
 
 @app.route('/admin/user/<int:pk>/detail', methods=['GET'])
 @admin_required
 def admin_user_detail(pk):
-    pass
+    try:
+        user = User.query.filter(User.id == pk).one()
+    except NoResultFound:
+        flash("The user with pk{} was't find".format(pk))
+        abort(404)
+    return render_template('admin_user_detail.html', user=user)
 
 
 @app.route(
@@ -292,7 +317,7 @@ def admin_user_detail(pk):
     methods=['GET']
 )
 @admin_required
-def admin_user_search():
+def admin_user_search(name):
     pass
 
 
