@@ -1,6 +1,6 @@
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
-from wtforms import PasswordField, TextField, SelectField
+from wtforms import PasswordField, TextField, SelectField, HiddenField
 from wtforms.validators import Required, EqualTo
 from models import db, User, Role, Address
 

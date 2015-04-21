@@ -307,6 +307,9 @@ class AdminTestCase(TestBase):
         db.session.delete(role)
         db.session.commit()
 
+    def test_user_search(self):
+        pass
+
 
 def run_test():
     db.create_all()

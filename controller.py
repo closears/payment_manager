@@ -104,6 +104,16 @@ def before_request():
             assert request.method == method
 
 
+@app.template_global(name='reduce')
+def _reduce():
+    return reduce
+
+
+@app.template_global(name='map')
+def _map():
+    return map
+
+
 @app.route('/success', methods=['GET'])
 def success():
     '''just for test'''
@@ -313,12 +323,15 @@ def admin_user_detail(pk):
 
 
 @app.route(
-    '/admin/user/search?name=<regex(r"(:?[a-zA-Z][a-zA-Z_0-9]*)?"):name>',
+    '/admin/user/search?name=<regex(r"(:?[a-zA-Z][a-zA-Z_0-9]*)?"):name>' +
+    'page=<int:page>&per_page=<int:per_page>',
     methods=['GET']
 )
 @admin_required
-def admin_user_search(name):
-    pass
+def admin_user_search(name, page, per_page):
+    pagination = User.query.filter(
+        User.name.like('{}%'.format(name))).pagination(page, per_page)
+    return render_template('admin_user_search.html', pagination=pagination)
 
 
 @app.route('/admin/role/add', methods=['GET', 'POST'])
