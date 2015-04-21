@@ -8,7 +8,7 @@
   {%- for page in pagination.iter_pages() %}
   {% if page %}
   {% if page != pagination.page %}
-  <a href='{{ url_for(request.endpoint,page=page, size=pagination.per_page, **extra) }}'>
+  <a href='{{ url_for(request.endpoint,page=page, per_page=pagination.per_page, **extra) }}'>
     {{ page }}
   </a>
   {% else %}
@@ -20,7 +20,7 @@
   {%- endfor %}
 
   {% if pagination.has_next %}
-  <a href='{{ url_for(request.endpoint, page=pagination.page + 1, size=pagination.per_page, **extra)}}'>Next</a>
+  <a href='{{ url_for(request.endpoint, page=pagination.page + 1, per_page=pagination.per_page, **extra)}}'>Next</a>
   {% endif %}
 </div>
 {% endmacro %}

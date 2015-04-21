@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}log search{% endblock %}
+{% block content %}
+<div>
+  <form method='GET'>
+    <div>
+      <label for='operator_id'>begin of name</label>
+      <input id='operator_id' name='operator_id'>
+    </div>
+    <div>
+      <label for='start_date'>start date</label>
+      <input id='start_date' name='start_date'>
+    </div>
+    <div>
+      <label for='end_date'>end date</label>
+      <input id='end_date' name='end_date'>
+    </div>
+    <input type='hidden' name='page' value='1'>
+    <div>
+      <label for='per_page'>per page</label>
+      <input id='per_page' name='per_page'>
+    </div>
+    <input type='submit' value='search'>
+  </form>
+</div>
+<div>
+  <table>
+    <thead>
+      <th>
+	<td>operator</td>
+	<td>method</td>
+	<td>time</td>
+	<td>remark</td>
+      </th>
+    </thead>
+    <tbody>
+      {% for item in pagination.items %}
+      <tr>
+	<td>{{ item.operator.name }}</td>
+	<td>{{ item.method }}</td>
+	<td>{{ item.time.strftime('%y-%m-%d %H:%M:%S') }}</td>
+	<td>{{ item.remark }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tbody>
+    </tbody>
+  </table>
+</div>
+{% from 'widgets.html' import render_pagination as paginate %}
+{% if pagination.has_next %}
+{{ paginate(pagination, extra={'operator_id': request.args['operator_id'], 'start_date': request.args['start_date'], 'end_date': request.args['end_date']}) }}
+{% endif %}
+{% endblock %}

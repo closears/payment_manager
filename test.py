@@ -232,7 +232,7 @@ class AdminTestCase(TestBase):
         db.session.commit()
         rv = self.client.get(url_for('admin_user_changepassword', pk=user.id))
         self.assertIn('<form', rv.data)
-        rv = self.client.get(url_for('admin_user_changepassword', pk=100))
+        rv = self.client.get(url_fnor('admin_user_changepassword', pk=100))
         self.assert404(rv)
         self.client.post(
             url_for('admin_user_changepassword', pk=user.id),
@@ -308,7 +308,44 @@ class AdminTestCase(TestBase):
         db.session.commit()
 
     def test_user_search(self):
-        pass
+        for i in range(30):
+            user = User(name='test{}'.format(i), password='test')
+            db.session.add(user)
+            role = Role(name='test{}'.format(i))
+            user.roles.append(role)
+            db.session.commit()
+
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get(
+            url_for('admin_user_search', name='test', page=1, per_page=20))
+        print(rv.data)
+
+        users = User.query.filter(User.name.like('test%')).all()
+        for user in users:
+            user.roles = []
+            db.session.commit()
+            db.session.delete(user)
+        db.session.commit()
+
+    def test_admin_add_role(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get(url_for('admin_role_add'))
+        self.assert_200(rv)
+        self.client.post(url_for('admin_role_add'), data=dict(name='test'))
+        role = Role.query.filter(Role.name == 'test').one()
+        self.assertEqual(role.name, 'test')
+
+    def test_admin_remove_role(self):
+        role = Role(name='test')
+        db.session.add(role)
+        db.session.commit()
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get(url_for('admin_role_remove', pk=role.id))
+        self.assert_200(rv)
+        self.assertIn('<form', rv.data)
+        self.assertIsNotNone(Role.query.get(role.id))
+        self.client.post(url_for('admin_role_remove', pk=role.id))
+        self.assertIsNone(Role.query.get(role.id))
 
 
 def run_test():

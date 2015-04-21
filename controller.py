@@ -1,3 +1,4 @@
+form datetime import datetime
 from sqlalchemy.orm.exc import NoResultFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
@@ -9,11 +10,11 @@ from flask_login import (
 from flask_principal import (
     Principal, Permission, Need, UserNeed, RoleNeed, identity_loaded,
     identity_changed, Identity)
-from models import app, db, User, Address, Person, OperationLog
+from models import app, db, User, Role, Address, Person, OperationLog
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
-    AdminRemoveRoleForm)
+    AdminRemoveRoleForm, RoleForm)
 
 
 class RegexConverter(BaseConverter):
@@ -112,6 +113,11 @@ def _reduce():
 @app.template_global(name='map')
 def _map():
     return map
+
+
+@app.template_global()
+def lst2csv(lst):
+    return reduce(lambda x, y: '{},{}'.format(x, y), lst)
 
 
 @app.route('/success', methods=['GET'])
@@ -272,6 +278,7 @@ def admin_user_changepassword(pk):
         form.populate_obj(user)
         OperationLog.log(db.session, current_user, user=user)
         db.session.commit()
+        return 'success'
     return render_template('admin_user_changepassword.html', form=form)
 
 
@@ -290,6 +297,7 @@ def admin_user_add_role(pk):
         form.populate_obj(user)
         OperationLog.log(db.session, current_user, user=user, form=form)
         db.session.commit()
+        return 'success'
     return render_template('admin_user_add_role.html', form=form, user=user)
 
 
@@ -308,6 +316,7 @@ def admin_user_remove_role(pk):
         form.populate_obj(user)
         OperationLog.log(db.session, current_user, user=user, form=form)
         db.session.commit()
+        return 'success'
     return render_template('admin_user_remove_role.html', form=form, user=user)
 
 
@@ -330,7 +339,7 @@ def admin_user_detail(pk):
 @admin_required
 def admin_user_search(name, page, per_page):
     pagination = User.query.filter(
-        User.name.like('{}%'.format(name))).pagination(page, per_page)
+        User.name.like('{}%'.format(name))).paginate(page, per_page)
     return render_template('admin_user_search.html', pagination=pagination)
 
 
@@ -338,27 +347,61 @@ def admin_user_search(name, page, per_page):
 @admin_required
 @OperationLog.log_template('{{ role.id }}')
 def admin_role_add():
-    pass
+    form = RoleForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        role = Role()
+        form.populate_obj(role)
+        db.session.add(role)
+        db.session.commit()
+        return 'success'
+    return render_template('admin_role_add.html', form=form)
 
 
 @app.route('/admin/role/<int:pk>/romve', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ role.name }}')
-def admin_role_romove(pk):
-    pass
+def admin_role_remove(pk):
+    try:
+        role = Role.query.filter(Role.id == pk).one()
+    except NoResultFound:
+        flash('The Role with pi{} was not find!'.format(pk))
+        abort(404)
+    if request.method == 'GET':
+        return render_template('admin_role_remove.html', role=role)
+    for user in role.users:
+        user.remove(role)
+    db.session.commit()
+    db.session.delete(role)
+    db.session.commit()
+    return 'success'
 
 
 date_regex = r"(:?\d{4}-\d{2}-\d{2})"
 
 
 @app.route(
-    '/admin/log/search?user-id=<int:user_id>' +
+    '/admin/log/search?operator-id=<int:operator_id>' +
     '&start_date=<regex("{}"):start_date>'.format(date_regex) +
-    '&end_date=<regex("{}"):end_date>'.format(date_regex),
+    '&end_date=<regex("{}"):end_date>'.format(date_regex) +
+    '&page=<int:page>&per_page=<int:per_page>',
     methods=['GET']
 )
 @admin_required
-def admin_log_search(user_id, start_date, end_date):
+def admin_log_search(operator_id, start_date, end_date, page, per_page):
+    pagination = OperationLog.query.filter(
+        OperationLog.operator_id == operator_id).filter(
+            OperationLog.time >= datetime.strptime(start_date, '%Y-%m-%d')
+            ).filter(
+                OperationLog.time <= datetime.strptime(end_date, '%Y-%m-%d')
+            ).paginate(page, per_page)
+    return render_template('admin_log_search.html', pagination=pagination)
+
+
+@app.route(
+    '/admin/log/operator_id/<int:operator_id>/clean', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template()
+def admin_log_clean(uer_id):
     pass
 
 

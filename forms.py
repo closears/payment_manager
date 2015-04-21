@@ -1,6 +1,6 @@
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
-from wtforms import PasswordField, TextField, SelectField, HiddenField
+from wtforms import PasswordField, TextField, SelectField
 from wtforms.validators import Required, EqualTo
 from models import db, User, Role, Address
 
@@ -77,6 +77,11 @@ class AdminRemoveRoleForm(_AdminRoleForm):
         if self.role.data > 0:
             role = Role.query.get(self.role.data)
             user.roles.remove(role)
+
+
+class RoleForm(ModelForm):
+    class Meta:
+        model = Role
 
 
 class AddressForm(ModelForm):

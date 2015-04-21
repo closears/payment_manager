@@ -32,14 +32,15 @@
 	<td>{{ item.name }}</td>
 	<td>{{ item.active }}</td>
 	<td>{{ item.address.name }}</td>
-	<td>{{ reduce(lambda x, y: '{},{}'.format(x, y), item.roles }}</td>
+	<td>{{ lst2csv(item.roles) }}</td>
 	<td>
-	  <a href=''>add</a>
-	  <a href=''>delete</a>
-	  <a href=''>add role</a>
-	  <a href=''>remove role</a>
-	  <a href=''>activate</a>
-	  <a href=''>deactivate</a>
+	  <a href='{{ url_for("admin_add_user") }}'>add</a>
+	  <a href='{{ url_for("admin_remove_user", pk=item.id) }}'>remove</a>
+	  <a href='{{ url_for("admin_user_add_role", pk=item.id) }}'>add role</a>
+	  <a href='{{ url_for("admin_user_remove_role", pk=item.id) }}'>remove role</a>
+	  <a href='{{ url_for("admin_user_activate", pk=item.id) }}'>activate</a>
+	  <a href='{{ url_for("admin_user_inactivate", pk=item.id) }}'>deactivate</a>
+	  <a href='{{ url_for("admin_user_changepassword", pk=item.id) }}'>change password</a>
 	</td>
       </tr>
       {% endfor %}
@@ -49,7 +50,7 @@
   </table>
 </div>
 {% from 'widgets.html' import render_pagination as paginate %}
-{% if paginagion.has_next %}
-{{ paginate(pagination) }}
+{% if pagination.has_next %}
+{{ paginate(pagination, extra={'name': request.args['name']}) }}
 {% endif %}
 {% endblock %}

@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}role add{% endblock %}
+{% block content %}
+<form method='POST'>
+  {{ form.hidden_tag() }}
+  <div>
+    {{ form.name.label }}
+    {{ form.name }}
+  </div>
+  <input type='submit' value='add'>
+</form>
+{% endblock %}
