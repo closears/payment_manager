@@ -1,8 +1,11 @@
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
-from wtforms import PasswordField, TextField, SelectField
+from wtforms import (
+    PasswordField, TextField, SelectField, DateField)
 from wtforms.validators import Required, EqualTo
-from models import db, User, Role, Address
+from controller import db
+from models import User, Role, Address
+
 
 BaseModelForm = model_form_factory(Form)
 
@@ -11,6 +14,11 @@ class ModelForm(BaseModelForm):
     @classmethod
     def get_session(cls):
         return db.session
+
+
+class PeroidForm(Form):
+    start_date = DateField(unicode('start date'))
+    end_date = DateField(unicode('end date'))
 
 
 class LoginForm(Form):
@@ -85,5 +93,18 @@ class RoleForm(ModelForm):
 
 
 class AddressForm(ModelForm):
+    parent_id = SelectField(unicode('parent id'), coerce=int)
+
+    def __init__(self, **kwargs):
+        super(AddressForm, self).__init__(**kwargs)
+        address = kwargs.get('obj', None)
+        if address and address.parent:
+            query = Address.query.filter(Address.id != address.parent_id)
+            if address.descendants:
+                query = query.filter(~Address.id.in_(address.descendants))
+        else:
+            query = Address.query
+        self.parent_id.choices = map(lambda x: (x.id, x.name), query.all())
+
     class Meta:
         model = Address

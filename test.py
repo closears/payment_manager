@@ -6,7 +6,7 @@ from flask import request, url_for
 from sqlalchemy.orm.exc import NoResultFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
-from models import User, Role
+from models import User, Role, Address
 from forms import LoginForm, AdminAddRoleForm
 
 
@@ -232,7 +232,7 @@ class AdminTestCase(TestBase):
         db.session.commit()
         rv = self.client.get(url_for('admin_user_changepassword', pk=user.id))
         self.assertIn('<form', rv.data)
-        rv = self.client.get(url_fnor('admin_user_changepassword', pk=100))
+        rv = self.client.get(url_for('admin_user_changepassword', pk=100))
         self.assert404(rv)
         self.client.post(
             url_for('admin_user_changepassword', pk=user.id),
@@ -318,7 +318,6 @@ class AdminTestCase(TestBase):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         rv = self.client.get(
             url_for('admin_user_search', name='test', page=1, per_page=20))
-        print(rv.data)
 
         users = User.query.filter(User.name.like('test%')).all()
         for user in users:
@@ -346,6 +345,89 @@ class AdminTestCase(TestBase):
         self.assertIsNotNone(Role.query.get(role.id))
         self.client.post(url_for('admin_role_remove', pk=role.id))
         self.assertIsNone(Role.query.get(role.id))
+
+    def test_admin_search_log(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.assert_authorized()
+        admin = User.query.filter(User.name == 'admin').one()
+        rv = self.client.get(url_for(
+            'admin_log_search',
+            operator_id=admin.id,
+            start_date='2015-01-01',
+            end_date='2015-05-01',
+            page=1,
+            per_page=20))
+        self.assertIn('login', rv.data)
+
+    def test_admin_log_clean(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.assert_authorized()
+        admin = User.query.filter(User.name == 'admin').one()
+        rv = self.client.get(url_for(
+            'admin_log_search',
+            operator_id=admin.id,
+            start_date='2015-01-01',
+            end_date='2015-05-01',
+            page=1,
+            per_page=20))
+        self.assertIn('login', rv.data)
+        rv = self.client.get(url_for('admin_log_clean', operator_id=admin.id))
+        self.assertIn('<form', rv.data)
+        self.assertIn('start_date', rv.data)
+        self.client.post(
+            url_for('admin_log_clean', operator_id=admin.id),
+            data=dict(
+                start_date='2011-01-01',
+                end_date='2012-01-01'))
+        self.assertTrue(admin.logs)
+        self.client.post(
+            url_for('admin_log_clean', operator_id=admin.id),
+            data=dict(
+                start_date='2015-01-01',
+                end_date='2015-05-01'))
+        self.assertFalse(admin.logs)
+
+
+class AddressTestCase(TestBase):
+    def setUp(self):
+        super(AddressTestCase, self).setUp()
+        parent = Address(no='420525', name='parent')
+        child1 = Address(no='42052511', name='child1')
+        child11 = Address(no='42052511001', name='child11')
+        child12 = Address(no='42052511002', name='child12')
+        child1.childs.extend([child11, child12])
+        child2 = Address(no='42052512', name='child2')
+        child21 = Address(no='42052512001', name='child21')
+        child22 = Address(no='42052512002', name='child22')
+        child2.childs.extend([child21, child22])
+        db.session.add(parent)
+        parent.childs.extend([child1, child2])
+        admin = User.query.filter(User.name == 'admin').one()
+        admin.roles.append(Role(name='admin'))
+        admin.address = parent
+        db.session.commit()
+
+    def test(self):
+        admin = User.query.filter(User.name == 'admin').one()
+        self.assertEqual(2, len(admin.address.childs))
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.assert_authorized()
+        rv = self.client.get(url_for('address_add'))
+        self.assert200(rv)
+
+    def test_address_add(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.assert_authorized()
+        parent = Address.query.filter(Address.name == 'child1').one()
+        self.client.get(url_for('address_add'))
+        self.client.post(url_for('address_add'), data=dict(
+            no='42052511xxx',
+            name='test',
+            parent_id=parent.id))
+        address = Address.query.filter(Address.name == 'test').one()
+        self.assertIn(address, parent.descendants)
+        db.session.delete(address)
+        db.session.commit()
 
 
 def run_test():

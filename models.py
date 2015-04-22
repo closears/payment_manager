@@ -116,6 +116,12 @@ class Address(db.Model):
     parent = db.relationship(
         'Address', backref='childs', remote_side=[id])
 
+    def __eq__(self, other):
+        return other and other.id == self.id
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
     def __repr__(self):
         return "<Address(name='{name}',parent={parent},no='{no}')>".format(
             name=self.name,
@@ -140,8 +146,7 @@ class Address(db.Model):
 
     @hybrid_method
     def descendant_of(self, address):
-        return self.id.in_(
-            [descendant.id for descendant in address.descendants()])
+        return address and self in address.descendants
 
     @property
     def ancestors(self):
@@ -154,8 +159,7 @@ class Address(db.Model):
 
     @hybrid_method
     def ancestor_of(self, address):
-        return self.id.in_(
-            [ancestor.id for ancestor in address.ancestors()])
+        return address and self in address.ancestors
 
 
 class PersonStandardAssoc(db.Model):
@@ -445,8 +449,7 @@ class PayBookItem(db.Model):
 
     @hybrid_method
     def descendant_of(self, item):
-        return self.id.in_(
-            [descendant.id for descendant in self.descendants()])
+        return item and self in item.descendants
 
     @property
     def ancestors(self):
@@ -459,8 +462,7 @@ class PayBookItem(db.Model):
 
     @hybrid_method
     def ancestor_of(self, item):
-        return self.id.in_(
-            [ancestor.id for ancestor in item.ancestors()])
+        return item and self in item.ancestors
 
 
 class FormatError(RuntimeError):

@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}role remove{% endblock %}
+{% block title %}delete addres{% endblock %}
 {% block content %}
 <div>
-  Confirm delete the role:{{ role.name }}?
-  The operation will delete all users has this role.
+  confirm delete address: {{ address.name }}?<br>
+  The operation will delete all childs of it!
 </div>
 <form method='POST'>
   {{ form.hidden_tag() }}

@@ -1,4 +1,4 @@
-form datetime import datetime
+from datetime import datetime
 from sqlalchemy.orm.exc import NoResultFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
@@ -13,8 +13,8 @@ from flask_principal import (
 from models import app, db, User, Role, Address, Person, OperationLog
 from flask_wtf.csrf import CsrfProtect
 from forms import (
-    LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
-    AdminRemoveRoleForm, RoleForm)
+    Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
+    AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm)
 
 
 class RegexConverter(BaseConverter):
@@ -30,7 +30,7 @@ login_manager.login_view = 'login'
 
 CsrfProtect(app)
 Principal(app)
-admin_required = Permission(RoleNeed('admin')).require()
+admin_required = Permission(RoleNeed('admin')).require(403)
 
 
 @login_manager.user_loader
@@ -61,8 +61,7 @@ def on_identity_loaded(sender, identity):
         for role in current_user.roles:
             identity.provides.add(RoleNeed(role.name))
     if hasattr(current_user, 'address') and current_user.address:
-        ids = [address.id for address in current_user.address.descendants()]
-        Address.query = Address.query.filter(Address.id.in_(ids))
+        ids = [address.id for address in current_user.address.descendants]
         Person.query = Person.query.filter(Person.address_id.in_(ids))
         for id in ids:
             identity.provides.add(AddressAccessPermission(id))
@@ -117,7 +116,7 @@ def _map():
 
 @app.template_global()
 def lst2csv(lst):
-    return reduce(lambda x, y: '{},{}'.format(x, y), lst)
+    return reduce(lambda x, y: '{},{}'.format(x, y), lst) if lst else ''
 
 
 @app.route('/success', methods=['GET'])
@@ -214,14 +213,14 @@ def admin_remove_user(pk):
     except NoResultFound:
         flash(unicode('no user find with pk:{}').format(pk))
         abort(404)
-    if request.method == 'GET':
-        return render_template(
-            'admin_remove_user.html', form=UserForm(obj=user)
-        )
-    OperationLog.log(db.session, current_user, user=user)
-    db.session.delete(user)
-    db.session.commit()
-    return 'success'
+    form = Form()
+    if request.method == 'POST' and form.validate_on_submit():
+        OperationLog.log(db.session, current_user, user=user)
+        db.session.delete(user)
+        db.session.commit()
+        return 'success'
+    return render_template(
+        'admin_remove_user.html', form=form, user=user)
 
 
 @app.route('/admin/user/<int:pk>/inactivate', methods=['GET', 'POST'])
@@ -304,7 +303,7 @@ def admin_user_add_role(pk):
 @app.route(
     '/admin/user/<int:pk>/removerole', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }},removed_roles:{{ from.role.data }}')
+@OperationLog.log_template('{{ user.id }},removed_roles:{{ form.role.data }}')
 def admin_user_remove_role(pk):
     try:
         user = User.query.filter(User.id == pk).one()
@@ -366,14 +365,15 @@ def admin_role_remove(pk):
     except NoResultFound:
         flash('The Role with pi{} was not find!'.format(pk))
         abort(404)
-    if request.method == 'GET':
-        return render_template('admin_role_remove.html', role=role)
-    for user in role.users:
-        user.remove(role)
-    db.session.commit()
-    db.session.delete(role)
-    db.session.commit()
-    return 'success'
+    form = Form()
+    if request.method == 'POST' and form.validate_on_submit():
+        for user in role.users:
+            user.remove(role)
+            db.session.commit()
+        db.session.delete(role)
+        db.session.commit()
+        return 'success'
+    return render_template('admin_role_remove.html', role=role, form=form)
 
 
 date_regex = r"(:?\d{4}-\d{2}-\d{2})"
@@ -401,12 +401,62 @@ def admin_log_search(operator_id, start_date, end_date, page, per_page):
     '/admin/log/operator_id/<int:operator_id>/clean', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template()
-def admin_log_clean(uer_id):
-    pass
+def admin_log_clean(operator_id):
+    try:
+        user = User.query.filter(User.id == operator_id).one()
+    except NoResultFound:
+        flash('No user was find by pk:{}'.format(operator_id))
+        abort(404)
+    form = PeroidForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        query = OperationLog.query.filter(OperationLog.id == operator_id)
+        if form.start_date.data:
+            start_date = datetime.fromordinal(form.start_date.data.toordinal())
+            query = query.filter(OperationLog.time >= start_date)
+        if form.end_date.data:
+            end_date = datetime.fromordinal(form.end_date.data.toordinal())
+            query = query.filter(OperationLog.time <= end_date)
+        query.delete()
+        db.session.commit()
+        return 'success'
+    return render_template('admin_log_clean.html', form=form, user=user)
 
 
 @app.route('/address/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template()
+@OperationLog.log_template('{{ address.id }}')
 def address_add():
-    pass
+    form = AddressForm(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        address = Address()
+        form.populate_obj(address)
+        db.session.add(address)
+        OperationLog.log(db.session, current_user, address=address)
+        db.session.commit()
+        if address.descendant_of(current_user.address):
+            identity_changed.send(
+                current_app._get_current_object(),
+                identity=Identity(current_user.id))
+        return 'success'
+    return render_template('address_add.html', form=form)
+
+
+@app.route('/address/<int:pk>/delete', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ address.name }}')
+def address_delete(pk):
+    try:
+        address = Address.query.filter(Address.id == pk).one()
+    except NoResultFound:
+        flash(unicode('Address with pk:{} not find').format(pk))
+        abort(404)
+    form = Form()
+    if request.method == 'POST' and form.validate_on_submit():
+        for descendant in address.descendants:
+            db.session.delete(descendant)
+            OperationLog.log(db.session, current_user, address=descendant)
+        db.session.delete(address)
+        OperationLog.log(db.session, current_user, address=address)
+        db.session.commit()
+        return 'success'
+    return render_template('address_delete.html', address=address, form=form)
