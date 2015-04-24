@@ -438,7 +438,7 @@ def address_add():
                 current_app._get_current_object(),
                 identity=Identity(current_user.id))
         return 'success'
-    return render_template('address_add.html', form=form)
+    return render_template('address_edit.html', form=form)
 
 
 @app.route('/address/<int:pk>/delete', methods=['GET', 'POST'])
@@ -460,3 +460,33 @@ def address_delete(pk):
         db.session.commit()
         return 'success'
     return render_template('address_delete.html', address=address, form=form)
+
+
+@app.route('/address/<int:pk>/edit', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template()
+def address_edit(pk):
+    try:
+        address = Address.query.filter(Address.id == pk).one()
+    except NoResultFound:
+        flash(unicode('No address fiind by pk:{}'.format(pk)))
+        abort(404)
+    form = AddressForm(formdata=request.form, obj=address)
+    if request.method == 'POST' and form.validate_on_submit():
+        form.populate_obj(address)
+        db.session.commit()
+        return 'success'
+    return render_template('address_edit.html', form=form)
+
+
+@app.route(
+    '/address/search?name=<name>&page=<int:page>&per_page=<int:per_page>',
+    methods=['POST'])
+@login_required
+@OperationLog.log_template()
+def address_search(name, page, per_page):
+    query = Address.query.filter(
+        Address.id.in_(current_user.address.descendants),
+        Address.name.like(unicode('{}%').format(name)))
+    return render_template(
+        'address_search.html', pagination=query.paginate(page, per_page))

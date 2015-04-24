@@ -426,8 +426,46 @@ class AddressTestCase(TestBase):
             parent_id=parent.id))
         address = Address.query.filter(Address.name == 'test').one()
         self.assertIn(address, parent.descendants)
+        self.assertEqual(address.no, '42052511xxx')
         db.session.delete(address)
         db.session.commit()
+
+    def test_address_delete(self):
+        child3 = Address(no='42052513', name='child3')
+        child31 = Address(no='42052513001', name='child31')
+        child32 = Address(no='42052513002', name='child32')
+        child3.childs.extend([child31, child32])
+        db.session.add(child3)
+        db.session.commit()
+
+        self.assertIsNotNone(Address.query.get(child3.id))
+        self.assertIsNotNone(Address.query.get(child31.id))
+        self.assertIsNotNone(Address.query.get(child32.id))
+
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get(url_for('address_delete', pk=child3.id))
+        self.assertIn('confirm', rv.data)
+        self.client.post(url_for('address_delete', pk=child3.id))
+        self.assertIsNone(Address.query.get(child3.id))
+        self.assertIsNone(Address.query.get(child31.id))
+        self.assertIsNone(Address.query.get(child32.id))
+
+    def test_address_edit(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('address_add'), data=dict(
+            no='42052519', name='test_p'))
+        parent = Address.query.filter(Address.name == 'test_p').one()
+        self.client.post(url_for('address_add'), data=dict(
+            no='42052519001', name='test_c', parent_id=parent.id))
+        address = Address.query.filter(Address.name == 'test_c').one()
+        self.assertEqual(parent.id, address.parent_id)
+        rv = self.client.get(url_for('address_edit', pk=address.id))
+        self.assertIn('test_c', rv.data)
+        self.client.post(url_for('address_edit', pk=address.id), data=dict(
+            no='42052519001', name='child2', parent_id=parent.id))
+        self.assertEqual('test_c', address.name)
+        self.client.post(url_for('address_delete', pk=parent.id))
+        self.assertIsNone(Address.query.get(address.id))
 
 
 def run_test():

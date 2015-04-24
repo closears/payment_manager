@@ -7,7 +7,7 @@ from flask import Flask
 from jinja2 import Template
 from sqlalchemy import or_, and_
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from flask.ext.sqlalchemy import SQLAlchemy
+from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm.exc import NoResultFound
 
 app = Flask(__name__)
@@ -112,9 +112,11 @@ class Address(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     no = db.Column(db.String(length=11), unique=True, nullable=False)
     name = db.Column(db.String, unique=True, nullable=False)
-    parent_id = db.Column(db.Integer, db.ForeignKey('addresses.id'))
-    parent = db.relationship(
-        'Address', backref='childs', remote_side=[id])
+    parent_id = db.Column(db.Integer,
+                          db.ForeignKey('addresses.id', ondelete='CASCADE'))
+    parent = db.relationship('Address', cascade='all, delete-orphan',
+                             backref='childs', remote_side=[id],
+                             single_parent=True)
 
     def __eq__(self, other):
         return other and other.id == self.id
@@ -694,3 +696,4 @@ class Note(db.Model):
 def test():
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
     db.create_all()
+ 

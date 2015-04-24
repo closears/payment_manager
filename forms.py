@@ -93,18 +93,23 @@ class RoleForm(ModelForm):
 
 
 class AddressForm(ModelForm):
-    parent_id = SelectField(unicode('parent id'), coerce=int)
+    parent_id = SelectField(
+        unicode('parent id'),
+        coerce=lambda x: x and int(x),
+        default=(None, ''))
 
     def __init__(self, **kwargs):
         super(AddressForm, self).__init__(**kwargs)
         address = kwargs.get('obj', None)
         if address and address.parent:
-            query = Address.query.filter(Address.id != address.parent_id)
+            # self can not be self's parent
+            query = Address.query.filter(Address.id != address.id)
             if address.descendants:
                 query = query.filter(~Address.id.in_(address.descendants))
         else:
             query = Address.query
         self.parent_id.choices = map(lambda x: (x.id, x.name), query.all())
+        self.parent_id.choices.append((None, ''))
 
     class Meta:
         model = Address
