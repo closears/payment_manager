@@ -316,7 +316,7 @@ class AdminTestCase(TestBase):
             db.session.commit()
 
         self.client.post('/login', data=dict(name='admin', password='admin'))
-        rv = self.client.get(
+        self.client.get(
             url_for('admin_user_search', name='test', page=1, per_page=20))
 
         users = User.query.filter(User.name.like('test%')).all()
@@ -466,6 +466,12 @@ class AddressTestCase(TestBase):
         self.assertEqual('test_c', address.name)
         self.client.post(url_for('address_delete', pk=parent.id))
         self.assertIsNone(Address.query.get(address.id))
+
+    def test_address_search(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.post(url_for(
+            'address_search', name='child', page=1, per_page=2))
+        print(rv.data)
 
 
 def run_test():

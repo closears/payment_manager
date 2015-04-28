@@ -3,12 +3,12 @@
 <input type='submit' value='删除'>
 {% endmacro %}
 
-{% macro render_pagination(pagination, extra={}) %}
+{% macro render_pagination(pagination) %}
 <div id='pagination'>
   {%- for page in pagination.iter_pages() %}
   {% if page %}
   {% if page != pagination.page %}
-  <a href='{{ url_for(request.endpoint,page=page, per_page=pagination.per_page, **extra) }}'>
+  <a href='{{ url_for_other_page(page, pagination.per_page) }}'>
     {{ page }}
   </a>
   {% else %}
@@ -20,7 +20,7 @@
   {%- endfor %}
 
   {% if pagination.has_next %}
-  <a href='{{ url_for(request.endpoint, page=pagination.page + 1, per_page=pagination.per_page, **extra)}}'>Next</a>
+  <a href='{{ url_for_other_page(pagination.page + 1, per_page=pagination.per_page) }}'>Next</a>
   {% endif %}
 </div>
 {% endmacro %}

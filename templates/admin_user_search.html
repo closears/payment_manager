@@ -51,6 +51,6 @@
 </div>
 {% from 'widgets.html' import render_pagination as paginate %}
 {% if pagination.has_next %}
-{{ paginate(pagination, extra={'name': request.args['name']}) }}
+{{ paginate(pagination) }}
 {% endif %}
 {% endblock %}

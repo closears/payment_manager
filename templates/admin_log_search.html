@@ -49,6 +49,6 @@
 </div>
 {% from 'widgets.html' import render_pagination as paginate %}
 {% if pagination.has_next %}
-{{ paginate(pagination, extra={'operator_id': request.args['operator_id'], 'start_date': request.args['start_date'], 'end_date': request.args['end_date']}) }}
+{{ paginate(pagination) }}
 {% endif %}
 {% endblock %}

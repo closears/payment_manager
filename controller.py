@@ -4,7 +4,8 @@ from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
 import flask
 from flask import (
-    render_template, session, request, flash, abort, redirect, current_app)
+    render_template, session, request, flash, abort, redirect, current_app,
+    url_for)
 from flask_login import (
     LoginManager, current_user, login_required, login_user, logout_user)
 from flask_principal import (
@@ -14,7 +15,7 @@ from models import app, db, User, Role, Address, Person, OperationLog
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
-    AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm)
+    AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm)
 
 
 class RegexConverter(BaseConverter):
@@ -117,6 +118,14 @@ def _map():
 @app.template_global()
 def lst2csv(lst):
     return reduce(lambda x, y: '{},{}'.format(x, y), lst) if lst else ''
+
+
+@app.template_global()
+def url_for_other_page(page, per_page):
+    args = request.view_args.copy()
+    args['page'] = page,
+    args['per_page'] = per_page
+    return url_for(request.endpoint, **args)
 
 
 @app.route('/success', methods=['GET'])
@@ -486,7 +495,21 @@ def address_edit(pk):
 @OperationLog.log_template()
 def address_search(name, page, per_page):
     query = Address.query.filter(
-        Address.id.in_(current_user.address.descendants),
+        Address.id.in_([a.id for a in current_user.address.descendants]),
         Address.name.like(unicode('{}%').format(name)))
     return render_template(
         'address_search.html', pagination=query.paginate(page, per_page))
+
+
+@app.route('/person/add', methods=['POST', 'GET'])
+@admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_add():
+    form = PersonForm(current_user, formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        person = Person()
+        form.populate_obj(person)
+        db.session.add(person)
+        db.session.commit()
+        return 'success'
+    return render_template('person_add.html', form=form)

@@ -696,4 +696,3 @@ class Note(db.Model):
 def test():
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
     db.create_all()
- 

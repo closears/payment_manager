@@ -4,7 +4,7 @@ from wtforms import (
     PasswordField, TextField, SelectField, DateField)
 from wtforms.validators import Required, EqualTo
 from controller import db
-from models import User, Role, Address
+from models import User, Role, Address, Person
 
 
 BaseModelForm = model_form_factory(Form)
@@ -113,3 +113,26 @@ class AddressForm(ModelForm):
 
     class Meta:
         model = Address
+
+
+class PersonForm(ModelForm):
+    address_id = SelectField('address', validators=[Required()], coerce=int)
+    birthday = DateField('birthday', validate=[Required()])
+
+    def __init__(self, user, *kwargs):
+        super(PeroidForm, self).__init__(**kwargs)
+        self.user = user
+        addresses = [a for a in user.address.descendants]
+        addresses.append(user.address)
+        self.address_id.choices = map(lambda x: (x.id, x.name), addresses)
+
+    def populate_obj(self, person):
+        super(PeroidForm, self).populate_obj(person)
+        person.birthday = self.birthday.data
+        person.create_by = self.user
+
+    class Meta:
+        model = Person
+        only = [
+            'idcard', 'birthday', 'name', 'address_id', 'address_detail',
+            'securi_no', 'personal_wages']

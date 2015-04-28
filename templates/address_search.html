@@ -16,10 +16,28 @@
 <table>
   <thead>
     <th>
-      <td>
-	
-      </td>
+      <td>no</td>
+      <td>name</td>
+      <td>parent</td>
+      <td>operation</td>
     </th>
   </thead>
+  <tbody>
+    {% for item in pagination.items %}
+    <tr>
+      <td>{{ item.no }}</td>
+      <td>{{ item.name }}</td>
+      <td>{{ item.parent|default('None') }}</td>
+      <td>
+	<a href='{{ url_for("address_delete",pk=item.id) }}'>delete</a>
+	<a href='{{ url_for("address_edit",pk=item.id) }}'>edit</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
 </table>
+{% from 'widgets.html' import render_pagination %}
+{% if pagination.has_next %}
+{{ render_pagination(pagination) }}
+{% endif %}
 {% endblock %}
