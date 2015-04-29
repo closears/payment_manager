@@ -116,23 +116,26 @@ class AddressForm(ModelForm):
 
 
 class PersonForm(ModelForm):
-    address_id = SelectField('address', validators=[Required()], coerce=int)
-    birthday = DateField('birthday', validate=[Required()])
+    address_id = SelectField(
+        'address',
+        validators=[Required()],
+        coerce=lambda x: x and int(x),
+        default=[None, ''])
+    birthday = DateField('birthday', validators=[Required()])
 
-    def __init__(self, user, *kwargs):
-        super(PeroidForm, self).__init__(**kwargs)
+    def __init__(self, user, **kwargs):
+        super(PersonForm, self).__init__(**kwargs)
         self.user = user
         addresses = [a for a in user.address.descendants]
         addresses.append(user.address)
         self.address_id.choices = map(lambda x: (x.id, x.name), addresses)
 
     def populate_obj(self, person):
-        super(PeroidForm, self).populate_obj(person)
-        person.birthday = self.birthday.data
+        super(PersonForm, self).populate_obj(person)
         person.create_by = self.user
+        person.status = Person.STATUS_CHOICES[Person.REG][0]
 
     class Meta:
         model = Person
-        only = [
-            'idcard', 'birthday', 'name', 'address_id', 'address_detail',
-            'securi_no', 'personal_wages']
+        only = ['idcard', 'name',  'address_detail',
+                'securi_no', 'personal_wage']

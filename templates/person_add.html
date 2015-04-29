@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}person add{% endblock %}
+{% block content %}
+<form method='POST'>
+  {{ form.hidden_tag() }}
+  <div>
+    {{ form.idcard.label }}
+    {{ form.idcard }}
+  </div>
+  <div>
+    {{ form.birthday.label }}
+    {{ form.birthday }}
+  </div>
+  <div>
+    {{ form.name.label }}
+    {{ form.name }}
+  </div>
+  <div>
+    {{ form.address_id.label }}
+    {{ form.address_id }}
+  </div>
+  <div>
+    {{ form.address_detail.label }}
+    {{ form.address_detail }}
+  </div>
+  <div>
+    {{ form.securi_no.label }}
+    {{ form.securi_no }}
+  </div>
+  <div>
+    {{ form.personal_wage.label }}
+    {{ form.personal_wage }}
+  </div>
+  <input type='submit' value='add'>
+</form>
+{% endblock %}

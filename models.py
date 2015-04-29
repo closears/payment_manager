@@ -85,7 +85,7 @@ class User(db.Model):
         return self._password
 
     @password.setter
-    def set_password(self, val):
+    def password(self, val):
         self._password = md5(val).hexdigest()
 
 
@@ -207,7 +207,7 @@ class PersonStandardAssoc(db.Model):
         return self._start_date
 
     @start_date.setter
-    def set_start_date(self, val):
+    def start_date(self, val):
         self._start_date = val
 
     @property
@@ -215,7 +215,7 @@ class PersonStandardAssoc(db.Model):
         return self._end_date
 
     @end_date.setter
-    def set_end_date(self, val):
+    def end_date(self, val):
         self._end_date = val
 
     @hybrid_property
@@ -236,8 +236,8 @@ class Person(db.Model):
                                                             order_by=id))
     address_detail = db.Column(db.String, nullable=False)
     securi_no = db.Column(db.String, nullable=False)
-    personal_wages = db.Column(db.Float(precision=2), nullable=False,
-                               default=0.0)
+    personal_wage = db.Column(db.Float(precision=2), nullable=False,
+                              default=0.0)
     standard_wages = db.relationship(
         'Standard',
         secondary=PersonStandardAssoc.__tablename__,
@@ -256,7 +256,7 @@ class Person(db.Model):
     (NORMAL, DEAD_UNRETIRE, ABROT_UNRETIRE, NORMAL_RETIRE, DEAD_RETIRE,
      SUSPEND_RETIRE, REG) = range(len(STATUS_CHOICES))
     status = db.Column(
-        db.String, nullable=False, info=STATUS_CHOICES)
+        db.String, nullable=False)
     retire_day = db.Column(db.Date)
     dead_day = db.Column(db.Date)
     create_user_id = db.Column(
@@ -323,7 +323,7 @@ class Person(db.Model):
         return self._birthday
 
     @birthday.setter
-    def set_birthday(self, val):
+    def birthday(self, val):
         self._birthday = val
 
     def retire(self, retire_day):
@@ -517,7 +517,7 @@ class PayBook(db.Model):
         return self._item
 
     @item.setter
-    def set_item(self, val):
+    def item(self, val):
         if isinstance(val, PayBookItem):
             self._item = val
         else:
@@ -529,7 +529,7 @@ class PayBook(db.Model):
         return self._peroid
 
     @peroid.setter
-    def set_peroid(self, val):
+    def peroid(self, val):
         '''val's format is %Y%m, for example:201503'''
         if isinstance(val, (datetime.datetime,)):
             self._peroid = datetime.datetime(val.year, val.month, 1)

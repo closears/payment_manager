@@ -1,13 +1,14 @@
 import os
 import tempfile
 import unittest
+from werkzeug import MultiDict
 from flask_testing import TestCase
 from flask import request, url_for
 from sqlalchemy.orm.exc import NoResultFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
-from models import User, Role, Address
-from forms import LoginForm, AdminAddRoleForm
+from models import User, Role, Address, Person
+from forms import LoginForm, AdminAddRoleForm, PersonForm
 
 
 class Utils(object):
@@ -104,7 +105,7 @@ class UserTestCase(TestBase):
         self.assert_authorized()
 
     def testLoginForm(self):
-        from werkzeug import MultiDict
+
         form = LoginForm(
             MultiDict([('name', 'admin'), ('password', 'admin')]))
         self.assertTrue(form.validate())
@@ -469,9 +470,64 @@ class AddressTestCase(TestBase):
 
     def test_address_search(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
-        rv = self.client.post(url_for(
+        rv = self.client.get(url_for(
             'address_search', name='child', page=1, per_page=2))
-        print(rv.data)
+        self.assertIn('tbody', rv.data)
+
+
+class PersonTestCase(TestBase):
+
+    def setUp(self):
+        super(PersonTestCase, self).setUp()
+        parent = Address(no='420525', name='parent')
+        child1 = Address(no='42052511', name='child1')
+        child11 = Address(no='42052511001', name='child11')
+        child12 = Address(no='42052511002', name='child12')
+        child1.childs.extend([child11, child12])
+        child2 = Address(no='42052512', name='child2')
+        child21 = Address(no='42052512001', name='child21')
+        child22 = Address(no='42052512002', name='child22')
+        child2.childs.extend([child21, child22])
+        db.session.add(parent)
+        parent.childs.extend([child1, child2])
+        self.admin = User.query.filter(User.name == 'admin').one()
+        self.admin.roles.append(Role(name='admin'))
+        self.admin.address = parent
+        db.session.commit()
+
+    def test_person_form(self):
+        form = PersonForm(self.admin, formdata=MultiDict([
+            ('idcard', '420525195107010010'),
+            ('birthday', '1951-07-01'),
+            ('name', 'test'),
+            ('address_id', self.admin.address.id),
+            ('address_detail', 'xxx'),
+            ('securi_no', '123123'),
+            ('personal_wage', '0.94')]))
+        person = Person()
+        form.populate_obj(person)
+        self.assertEqual(person.idcard, '420525195107010010')
+        from datetime import date
+        self.assertEqual(person.birthday, date(1951, 7, 1))
+
+    def test_person_add(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get(url_for('person_add'))
+        self.assert_200(rv)
+        address = Address.query.filter(Address.name == 'parent').one()
+        rv = self.client.post('/person/add', data=dict(
+            idcard='420525195107010010',
+            birthday='1951-07-01',
+            name='test',
+            address_id=address.id,
+            address_detail='xxxx',
+            securi_no='123123',
+            personal_wage='0.94'))
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.assertIsNotNone(person)
+        db.session.delete(person)
+        db.session.commit()
 
 
 def run_test():

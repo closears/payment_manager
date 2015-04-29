@@ -63,6 +63,7 @@ def on_identity_loaded(sender, identity):
             identity.provides.add(RoleNeed(role.name))
     if hasattr(current_user, 'address') and current_user.address:
         ids = [address.id for address in current_user.address.descendants]
+        ids.append(current_user.address.id)
         Person.query = Person.query.filter(Person.address_id.in_(ids))
         for id in ids:
             identity.provides.add(AddressAccessPermission(id))
@@ -90,13 +91,6 @@ def page_forbiden(error):
 def before_request():
     session['error'] = None
     if request.method == 'POST':
-        if request.form.get('address_id', None):
-            if not AddressAccessPermission(
-                    int(request.form['address_id'])).can():
-                flash(
-                    unicode('You can not access address with id{}').format(
-                        request.form['address_id']))
-                abort(403)
         method = request.form.get('_method', '').upper()
         if method:
             request.environ['REQUEST_METHOD'] = method
@@ -490,7 +484,7 @@ def address_edit(pk):
 
 @app.route(
     '/address/search?name=<name>&page=<int:page>&per_page=<int:per_page>',
-    methods=['POST'])
+    methods=['GET'])
 @login_required
 @OperationLog.log_template()
 def address_search(name, page, per_page):
@@ -501,7 +495,7 @@ def address_search(name, page, per_page):
         'address_search.html', pagination=query.paginate(page, per_page))
 
 
-@app.route('/person/add', methods=['POST', 'GET'])
+@app.route('/person/add', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ person.idcard }}')
 def person_add():
