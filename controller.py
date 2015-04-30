@@ -216,7 +216,7 @@ def admin_remove_user(pk):
     except NoResultFound:
         flash(unicode('no user find with pk:{}').format(pk))
         abort(404)
-    form = Form()
+    form = Form(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         OperationLog.log(db.session, current_user, user=user)
         db.session.delete(user)
@@ -368,7 +368,7 @@ def admin_role_remove(pk):
     except NoResultFound:
         flash('The Role with pi{} was not find!'.format(pk))
         abort(404)
-    form = Form()
+    form = Form(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         for user in role.users:
             user.remove(role)
@@ -453,7 +453,7 @@ def address_delete(pk):
     except NoResultFound:
         flash(unicode('Address with pk:{} not find').format(pk))
         abort(404)
-    form = Form()
+    form = Form(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         for descendant in address.descendants:
             db.session.delete(descendant)
@@ -504,6 +504,25 @@ def person_add():
         person = Person()
         form.populate_obj(person)
         db.session.add(person)
+        OperationLog.log(db.session, current_user, person=person)
         db.session.commit()
         return 'success'
     return render_template('person_add.html', form=form)
+
+
+@app.route('/person/<int:pk>/delete', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_delete(pk):
+    try:
+        person = Person.query.filter(Person.id == pk).one()
+    except NoResultFound:
+        flash(unicode('No person find with pk:{}').format(pk))
+        abort(404)
+    form = Form(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        db.session.delete(person)
+        OperationLog.log(db.session, current_user, person=person)
+        db.session.commit()
+        return 'success'
+    return render_template('person_delete.html', form=form)

@@ -167,7 +167,7 @@ class AdminTestCase(TestBase):
         db.session.commit()
 
     def test_user_form(self):
-        print(UserForm().data)
+        self.assertIsNotNone(UserForm().data)
 
     def test_add_user(self):
         self.assert_not_authorized()
@@ -495,6 +495,13 @@ class PersonTestCase(TestBase):
         self.admin.address = parent
         db.session.commit()
 
+    def test(self):
+        person = Person()
+        from datetime import date
+        person.birthday = date(1951, 7, 1)
+        person.reg()
+        self.assertIsNotNone(person.status)
+
     def test_person_form(self):
         form = PersonForm(self.admin, formdata=MultiDict([
             ('idcard', '420525195107010010'),
@@ -515,7 +522,7 @@ class PersonTestCase(TestBase):
         rv = self.client.get(url_for('person_add'))
         self.assert_200(rv)
         address = Address.query.filter(Address.name == 'parent').one()
-        rv = self.client.post('/person/add', data=dict(
+        self.client.post(url_for('person_add'), data=dict(
             idcard='420525195107010010',
             birthday='1951-07-01',
             name='test',
@@ -528,6 +535,29 @@ class PersonTestCase(TestBase):
         self.assertIsNotNone(person)
         db.session.delete(person)
         db.session.commit()
+
+    def test_person_delete(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.assert_authorized()
+        address = Address.query.filter(Address.name == 'parent').one()
+        self.client.post(url_for('person_add'), data=dict(
+            idcard='420525195107010010',
+            birthday='1951-07-01',
+            name='test',
+            address_id=address.id,
+            address_detail='xxxx',
+            securi_no='123123',
+            personal_wage='0.94'))
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.assertIsNotNone(person)
+        persons = Person.query.filter(Person.id == person.id).all()
+        self.assertTrue(persons)
+        rv = self.client.get(url_for('person_delete', pk=person.id))
+        self.assertIn('delete', rv.data)
+        self.client.post(url_for('person_delete', pk=person.id))
+        persons = Person.query.filter(Person.id == person.id).all()
+        self.assertFalse(persons)
 
 
 def run_test():

@@ -29,8 +29,10 @@
       <td>{{ item.name }}</td>
       <td>{{ item.parent|default('None') }}</td>
       <td>
+	{% if current_user.has_role('admin') %}
 	<a href='{{ url_for("address_delete",pk=item.id) }}'>delete</a>
 	<a href='{{ url_for("address_edit",pk=item.id) }}'>edit</a>
+	{% endif %}
       </td>
     </tr>
     {% endfor %}

@@ -1,0 +1,2 @@
+1、 对于modelforms,only之外的field调用populate_obj也会试图setattr, 所以form的字名称段必须与model一致
+2、 model的property 以及 setter 函数名称必须一致。

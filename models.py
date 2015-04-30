@@ -2,6 +2,7 @@
 import re
 import datetime
 import calendar
+from dateutil.relativedelta import relativedelta
 from hashlib import md5
 from flask import Flask
 from jinja2 import Template
@@ -13,8 +14,8 @@ from sqlalchemy.orm.exc import NoResultFound
 app = Flask(__name__)
 db = SQLAlchemy(app)
 
-__IMPLEMENT_DATE = datetime.date(2011, 7, 1)
-__MIN_ENGAGE_IN_AGE = 16
+_IMPLEMENT_DATE = datetime.date(2011, 7, 1)
+_MIN_ENGAGE_IN_AGE = 16
 
 
 class UserRoleAssoc(db.Model):
@@ -87,6 +88,9 @@ class User(db.Model):
     @password.setter
     def password(self, val):
         self._password = md5(val).hexdigest()
+
+    def has_role(self, rolename):
+        return rolename in [role.name for role in self.roles]
 
 
 class Role(db.Model):
@@ -249,13 +253,14 @@ class Person(db.Model):
         (unicode('dead-unretire'), ('在职死亡')),
         (unicode('abort-unretire'), ('在职终止')),
         (unicode('normal-retire'), ('退休')),
+        (unicode('abort_retire'), ('退休终止')),
         (unicode('dead-retire'), ('退休死亡')),
         (unicode('suspend-retire'), ('退休暂停')),
         (unicode('registed'), ('登记'))
     )
-    (NORMAL, DEAD_UNRETIRE, ABROT_UNRETIRE, NORMAL_RETIRE, DEAD_RETIRE,
-     SUSPEND_RETIRE, REG) = range(len(STATUS_CHOICES))
-    status = db.Column(
+    (NORMAL, DEAD_UNRETIRE, ABROT_UNRETIRE, NORMAL_RETIRE, ABORT_RETIRE,
+     DEAD_RETIRE, SUSPEND_RETIRE, REG) = range(len(STATUS_CHOICES))
+    _status = db.Column(
         db.String, nullable=False)
     retire_day = db.Column(db.Date)
     dead_day = db.Column(db.Date)
@@ -287,37 +292,6 @@ class Person(db.Model):
             status=self.status
         ))
 
-    @hybrid_property
-    def can_reg(self):
-        now = datetime.datetime.now()
-        return self.birthday > datetime.datetime(
-            now.year - __MIN_ENGAGE_IN_AGE, now.month, now.day)
-
-    @property
-    def canretire(self):
-        return str(self.status) in (
-            Person.STATUS_CHOICES[Person.NORMAL][0],
-            Person.STATUS_CHOICES[Person.REG][0]
-        )
-
-    @property
-    def candead(self):
-        return str(self.status) in (
-            Person.STATUS_CHOICES[Person.NORMAL][0],
-            Person.STATUS_CHOICES[Person.REG][0],
-            Person.STATUS_CHOICES[Person.NORMAL_RETIRE][0],
-            Person.STATUS_CHOICES[Person.SUSPEND_RETIRE][0]
-        )
-
-    @property
-    def retire_day(self):
-        retire_day = datetime.datetime(
-            self.birthday.year + 60,
-            self.birthday.month + 1,
-            1
-        )
-        return max(retire_day, __IMPLEMENT_DATE)
-
     @property
     def birthday(self):
         return self._birthday
@@ -326,33 +300,111 @@ class Person(db.Model):
     def birthday(self, val):
         self._birthday = val
 
+    @property
+    def earliest_retire_day(self):
+        delta = relativedelta(years=60, months=1)
+        retire_day = datetime.datetime(
+            self.birthday.year, self.birthday.month, 1) + delta
+        return max(retire_day, _IMPLEMENT_DATE)
+
+    def __status_str(self, index):
+        return self.STATUS_CHOICES[index][0]
+
+    def __status_in(self, *args):
+        return str(self.status) in (self.__status_str(i) for i in args)
+
+    def __status_is(self, index):
+        return str(self.status) == self.__status_str(index)
+
+    def reg(self):
+        if not self.can_reg:
+            raise PersonStatusError(
+                unicode('status error, person already been registed'))
+        self._status = self.__status_str(self.REG)
+        return self
+
     def retire(self, retire_day):
-        if PersonStatus.canretire(self):
-            standard_retire_day = self.retire_day_func('2011-07-01')
-            if retire_day < standard_retire_day:
-                raise PersonAgeError('person is not reach retire day')
-            self.retire_day = standard_retire_day
-            self.status = PersonStatus\
-                .STATUS_CHOICES[PersonStatus.NORMAL_RETIRE][0]
-        raise PersonStatusError(
-            unicode('status error, person can not be reg be retire'))
+        if not self.can_retire:
+            raise PersonStatusError(
+                unicode('status error, person can not retire'))
+        if not retire_day:
+            retire_day = self.earliest_retire_day
+        elif retire_day < self.earliest_retire_day:
+            raise PersonAgeError('person is not reach retire day')
+        self.retire_day = max(retire_day, self.earliest_retire_day)
+        self._status = self.__status_str(self.NORMAL_RETIRE)
         return self
 
     def dead(self, dead_day):
-        if str(self.status) in (
-                Person.STATUS_CHOICES[Person.REG][0],
-                Person.STATUS_CHOICES[Person.NORMAL][0]
-        ):
-            self.status = Person.STATUS_CHOICES[Person.DEAD_UNRETIRE][0]
-        elif str(self.status) in (
-                Person.STATUS_CHOICES[Person.NORMAL_RETIRE][0],
-                Person.STATUS_CHOICES[Person.SUSPEND_RETIRE][0]
-        ):
-            self.status = Person.STATUS_CHOICES[Person.DEAD_RETIRE][0]
+        if self.can_dead_unretire:
+            self._status = self.__status_str(self.DEAD_UNRETIRE)
+        elif self.can_dead_retire:
+            self._status = self.__status_str(self.DEAD_RETIRE)
         else:
             raise PersonStatusError('person can not be dead')
         self.dead_day = dead_day
         return self
+
+    def abort(self):
+        if self.can_abort_normal:
+            self._status = self.__status_str(self.ABROT_UNRETIRE)
+        elif self.can_abort_retire:
+            self._status = self.__status_str(self.ABORT_RETIRE)
+        else:
+            raise PersonStatusError('Person can not be abort')
+        return self
+
+    def normal(self):
+        if self.can_normal:
+            self._status = self.__status_str(self.NORMAL)
+        else:
+            raise PersonStatusError('Person can not be normal')
+        return self
+
+    @hybrid_property
+    def status(self):
+        return self._status
+
+    @hybrid_property
+    def can_reg(self):
+        now = datetime.datetime.now()
+        now = datetime.date(now.year, now.month, now.day)
+        earlist_engage_day = datetime.date(
+            self.birthday.year + _MIN_ENGAGE_IN_AGE, self.birthday.month,
+            self.birthday.day)
+        return self.status is None and now > earlist_engage_day
+
+    @property
+    def can_normal(self):
+        return self.__status_is(self.REG)
+
+    @property
+    def can_abort_normal(self):
+        return self.__status_is(self.NORMAL)
+
+    @property
+    def can_abort_retire(self):
+        return self.__status_in(self.NORMAL_RETIRE, self.SUSPEND_RETIRE)
+
+    @property
+    def can_retire(self):
+        return self.__status_is(self.NORMAL)
+
+    @property
+    def can_suspend(self):
+        return self.__status_is(self.NORMAL_RETIRE)
+
+    @property
+    def can_resume(self):
+        return self.__status_in(self.SUSPEND_RETIRE)
+
+    @property
+    def can_dead_retire(self):
+        return self.__status_in(self.NORMAL_RETIRE, self.SUSPEND_RETIRE)
+
+    @property
+    def can_dead_unretire(self):
+        return self.__status_in(self.NORMAL)
 
 
 class PersonStatusError(RuntimeError):
@@ -364,7 +416,7 @@ class PersonAgeError(RuntimeError):
 
 
 class PersonStatus(object):
-    pass
+    ''''''
 
 
 class Standard(db.Model):

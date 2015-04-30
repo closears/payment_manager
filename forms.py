@@ -133,7 +133,8 @@ class PersonForm(ModelForm):
     def populate_obj(self, person):
         super(PersonForm, self).populate_obj(person)
         person.create_by = self.user
-        person.status = Person.STATUS_CHOICES[Person.REG][0]
+        if person.can_reg:
+            person.reg()
 
     class Meta:
         model = Person
