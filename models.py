@@ -206,7 +206,7 @@ class PersonStandardAssoc(db.Model):
             end_date=self.end_date if self.end_date else ''
         )
 
-    @property
+    @hybrid_property
     def start_date(self):
         return self._start_date
 
@@ -214,7 +214,7 @@ class PersonStandardAssoc(db.Model):
     def start_date(self, val):
         self._start_date = val
 
-    @property
+    @hybrid_property
     def end_date(self):
         return self._end_date
 
@@ -757,9 +757,11 @@ class Note(db.Model):
             self._effective
         )
 
+    @hybrid_property
     def disable(self):
         self._effective = False
 
+    @hybrid_method
     def finish(self):
         self.end_date = datetime.datetime.now()
 

@@ -512,7 +512,6 @@ def address_edit(pk):
     '/address/search?name=<name>&page=<int:page>&per_page=<int:per_page>',
     methods=['GET'])
 @login_required
-@OperationLog.log_template()
 def address_search(name, page, per_page):
     query = Address.query.filter(
         Address.id.in_([a.id for a in current_user.address.descendants]),
@@ -523,7 +522,7 @@ def address_search(name, page, per_page):
 
 @app.route('/person/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_add():
     form = PersonForm(current_user, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -538,12 +537,12 @@ def person_add():
         OperationLog.log(db.session, current_user, person=person)
         db.session.commit()
         return 'success'
-    return render_template('person_add.html', form=form)
+    return render_template('person_edit.html', form=form)
 
 
 @app.route('/person/<int:pk>/delete', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_delete(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(formdata=request.form)
@@ -559,7 +558,7 @@ def person_delete(pk):
 
 @app.route('/person/<int:pk>/retire_reg', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_regire_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = DateForm(formdata=request.form)
@@ -578,7 +577,7 @@ def person_regire_reg(pk):
 
 @app.route('/person/<int:pk>/normal_reg', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_normal_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -597,7 +596,7 @@ def person_normal_reg(pk):
 
 @app.route('/person/batch_normal', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_batch_normal():
     form = PeroidForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -615,7 +614,7 @@ def person_batch_normal():
 
 @app.route('/person/<int:pk>/dead_reg', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_dead_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = DateForm(request.form)
@@ -634,7 +633,7 @@ def person_dead_reg(pk):
 
 @app.route('/person/<int:pk>/abort_reg', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_abort_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -653,7 +652,7 @@ def person_abort_reg(pk):
 
 @app.route('/person/<int:pk>/suspend', methods=['GET', 'POST'])
 @person_admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_suspend_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -672,7 +671,7 @@ def person_suspend_reg(pk):
 
 @app.route('/person/<int:pk>/resume', methods=['GET', 'POST'])
 @person_admin_required
-@OperationLog.log_template('{{ person.idcard }}')
+@OperationLog.log_template('{{ person.id }}')
 def person_resume_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -687,3 +686,21 @@ def person_resume_reg(pk):
         db.session.commit()
         return 'success'
     return render_template('confirm.html', form=form, title='person resume')
+
+
+@app.route('/person/<int:pk>/address_change', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{person.id }},{{ person.idcard }},' +
+                           '{{ person.name }},{{ person.idcard }},')
+def person_update(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = PersonForm(current_user, obj=person, formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        OperationLog.log(db.session, current_user, person=person)
+        form.populate_obj(person)
+        db.session.commit()
+        return 'success'
+    return render_template('person_edit.html', form=form)
+
+
+# TODO add person log search, person standard add
