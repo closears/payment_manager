@@ -11,11 +11,26 @@ from flask_login import (
 from flask_principal import (
     Principal, Permission, Need, UserNeed, RoleNeed, identity_loaded,
     identity_changed, Identity)
-from models import app, db, User, Role, Address, Person, OperationLog
+from models import (
+    app, db, User, Role, Address, Person, OperationLog, PersonStatusError,
+    PersonAgeError)
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
-    AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm)
+    AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
+    DateForm)
+
+
+def __find_obj_or_404(cls, id_field, pk):
+    try:
+        obj = cls.query.filter(id_field == pk).one()
+    except NoResultFound:
+        flash(unicode('Object witt pk:{} was not find').format(pk))
+        abort(404)
+    return obj
+
+
+db.my_get_obj_or_404 = __find_obj_or_404
 
 
 class RegexConverter(BaseConverter):
@@ -32,6 +47,7 @@ login_manager.login_view = 'login'
 CsrfProtect(app)
 Principal(app)
 admin_required = Permission(RoleNeed('admin')).require(403)
+person_admin_required = Permission(RoleNeed('person_admin')).require(403)
 
 
 @login_manager.user_loader
@@ -223,7 +239,8 @@ def admin_remove_user(pk):
         db.session.commit()
         return 'success'
     return render_template(
-        'admin_remove_user.html', form=form, user=user)
+        'confirm.html', form=form, title='delete user', message=(
+            'confirm delete the user:{}').format(user.name))
 
 
 @app.route('/admin/user/<int:pk>/inactivate', methods=['GET', 'POST'])
@@ -235,13 +252,15 @@ def admin_user_inactivate(pk):
     except NoResultFound:
         flash(unicode('no user find with pk:{}').format(pk))
         abort(404)
-    if request.method == 'GET':
-        return render_template(
-            'admin_user_inactivate.html', form=UserForm(obj=user))
-    OperationLog.log(db.session, current_user, user=user)
-    user.active = False
-    db.session.commit()
-    return 'success'
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+            OperationLog.log(db.session, current_user, user=user)
+            user.active = False
+            db.session.commit()
+            return 'success'
+    return render_template(
+        'confirm.html', form=form, title='user inactivate', message=unicode(
+            'user deactivate: {}').format(user.name))
 
 
 @app.route('/admin/user/<int:pk>/activate', methods=['GET', 'POST'])
@@ -253,13 +272,15 @@ def admin_user_activate(pk):
     except NoResultFound:
         flash(unicode('no user find with pk:{}').format(pk))
         abort(404)
-    if request.method == 'GET':
-        return render_template(
-            'admin_user_activate.html', form=UserForm(obj=user))
-    user.active = True
-    OperationLog.log(db.session, current_user, user=user)
-    db.session.commit()
-    return 'success'
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+            user.active = True
+            OperationLog.log(db.session, current_user, user=user)
+            db.session.commit()
+            return 'success'
+    return render_template(
+        'confirm.html', form=form, title='user activate', message=unicode(
+            'activate user:{}').format(user.name))
 
 
 @app.route(
@@ -376,7 +397,9 @@ def admin_role_remove(pk):
         db.session.delete(role)
         db.session.commit()
         return 'success'
-    return render_template('admin_role_remove.html', role=role, form=form)
+    return render_template(
+        'confirm.html', form=form, title='role remove', message=unicode(
+            'confirm delete the role:{}').format(role.name))
 
 
 date_regex = r"(:?\d{4}-\d{2}-\d{2})"
@@ -462,7 +485,10 @@ def address_delete(pk):
         OperationLog.log(db.session, current_user, address=address)
         db.session.commit()
         return 'success'
-    return render_template('address_delete.html', address=address, form=form)
+    return render_template(
+        'confirm.html', form=form, title='delete address', message=unicode(
+            'confirm delete the :{}? It will delete all childs of it!'
+        ).format(address.name))
 
 
 @app.route('/address/<int:pk>/edit', methods=['GET', 'POST'])
@@ -502,7 +528,12 @@ def person_add():
     form = PersonForm(current_user, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         person = Person()
-        form.populate_obj(person)
+        try:
+            form.populate_obj(person)
+        except (PersonStatusError, PersonAgeError):
+            flash('person aready registed')
+            db.session.rollback()
+            abort(500)
         db.session.add(person)
         OperationLog.log(db.session, current_user, person=person)
         db.session.commit()
@@ -514,15 +545,145 @@ def person_add():
 @admin_required
 @OperationLog.log_template('{{ person.idcard }}')
 def person_delete(pk):
-    try:
-        person = Person.query.filter(Person.id == pk).one()
-    except NoResultFound:
-        flash(unicode('No person find with pk:{}').format(pk))
-        abort(404)
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         db.session.delete(person)
         OperationLog.log(db.session, current_user, person=person)
         db.session.commit()
         return 'success'
-    return render_template('person_delete.html', form=form)
+    return render_template('confirm.html', form=form, title='person delete',
+                           message=unicode('Confirm delete person:{}?').format(
+                               person.idcard))
+
+
+@app.route('/person/<int:pk>/retire_reg', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_regire_reg(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = DateForm(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        try:
+            person.retire(form.date.data)
+        except (PersonStatusError, PersonAgeError):
+            flash('Person can not be retire')
+            db.session.rollback()
+            abort(500)
+        OperationLog.log(db.session, current_user, person=person)
+        db.session.commit()
+        return 'success'
+    return render_template('date.html', form=form, title='persn retire reg')
+
+
+@app.route('/person/<int:pk>/normal_reg', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_normal_reg(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        try:
+            person.normal()
+        except (PersonStatusError, PersonAgeError):
+            flash('Person can not normal')
+            db.session.rollback()
+            abort(500)
+        OperationLog.log(db.session, current_user, person=person)
+        db.session.commit()
+        return 'success'
+    return render_template('confirm.html', form=form, title='normal reg')
+
+
+@app.route('/person/batch_normal', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_batch_normal():
+    form = PeroidForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        persons = Person.query.filter(
+            Person.can_normal.is_(True)).filter(
+                Person.birthday >= form.start_date.data).filter(
+                    Person.birthday <= form.end_date.data).all()
+        for person in persons:
+            person.normal()
+            OperationLog.log(db.session, current_user, person=person)
+        db.session.commit()
+        return 'succes'
+    return render_template('person_batch_normal.html', form=form)
+
+
+@app.route('/person/<int:pk>/dead_reg', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_dead_reg(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = DateForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        try:
+            person.dead(form.date.data)
+        except (PersonAgeError, PersonStatusError):
+            flash('Person can not dead')
+            db.session.rollback()
+            abort(500)
+        OperationLog.log(db.session, current_user, person=person)
+        db.session.commit()
+        return 'success'
+    return render_template('date.html', form=form, title='dead reg')
+
+
+@app.route('/person/<int:pk>/abort_reg', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_abort_reg(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        try:
+            person.abort()
+        except (PersonAgeError, PersonStatusError):
+            flash('Person can not abort')
+            db.session.rollback()
+            abort(500)
+        OperationLog.log(db.session, current_user, person=person)
+        db.session.commit()
+        return 'success'
+    return render_template('confirm.html', form=form, title='persn abort')
+
+
+@app.route('/person/<int:pk>/suspend', methods=['GET', 'POST'])
+@person_admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_suspend_reg(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        try:
+            person.suspend()
+        except (PersonAgeError, PersonStatusError):
+            flash('Person can not suspend')
+            db.session.rollback()
+            abort(500)
+        OperationLog.log(db.session, current_user, person=person)
+        db.session.commit()
+        return 'success'
+    return render_template('confirm.html', form=form, title='person suspend')
+
+
+@app.route('/person/<int:pk>/resume', methods=['GET', 'POST'])
+@person_admin_required
+@OperationLog.log_template('{{ person.idcard }}')
+def person_resume_reg(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        try:
+            person.resume()
+        except (PersonAgeError, PersonStatusError):
+            flash('Person can not resume')
+            db.session.rollback()
+            abort(500)
+        OperationLog.log(db.session, current_user, person=person)
+        db.session.commit()
+        return 'success'
+    return render_template('confirm.html', form=form, title='person resume')

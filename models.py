@@ -2,11 +2,11 @@
 import re
 import datetime
 import calendar
-from dateutil.relativedelta import relativedelta
 from hashlib import md5
+from dateutil.relativedelta import relativedelta
 from flask import Flask
 from jinja2 import Template
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, false
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm.exc import NoResultFound
@@ -239,7 +239,7 @@ class Person(db.Model):
     address = db.relationship('Address', backref=db.backref('persons',
                                                             order_by=id))
     address_detail = db.Column(db.String, nullable=False)
-    securi_no = db.Column(db.String, nullable=False)
+    securi_no = db.Column(db.String, nullable=False, unique=True)
     personal_wage = db.Column(db.Float(precision=2), nullable=False,
                               default=0.0)
     standard_wages = db.relationship(
@@ -292,7 +292,7 @@ class Person(db.Model):
             status=self.status
         ))
 
-    @property
+    @hybrid_property
     def birthday(self):
         return self._birthday
 
@@ -303,18 +303,21 @@ class Person(db.Model):
     @property
     def earliest_retire_day(self):
         delta = relativedelta(years=60, months=1)
-        retire_day = datetime.datetime(
+        retire_day = datetime.date(
             self.birthday.year, self.birthday.month, 1) + delta
         return max(retire_day, _IMPLEMENT_DATE)
 
+    @hybrid_method
     def __status_str(self, index):
         return self.STATUS_CHOICES[index][0]
 
+    @hybrid_method
     def __status_in(self, *args):
-        return str(self.status) in (self.__status_str(i) for i in args)
+        return self.status in (self.__status_str(i) for i in args)
 
+    @hybrid_method
     def __status_is(self, index):
-        return str(self.status) == self.__status_str(index)
+        return self.status == self.__status_str(index)
 
     def reg(self):
         if not self.can_reg:
@@ -361,48 +364,64 @@ class Person(db.Model):
             raise PersonStatusError('Person can not be normal')
         return self
 
+    def suspend(self):
+        if not self.can_suspend:
+            self._status = self.__status_str(self.SUSPEND_RETIRE)
+        else:
+            raise PersonStatusError('Person can not be suspend')
+        return self
+
+    def resume(self):
+        if not self.can_resume:
+            self._status = self.__status_str(self.NORMAL_RETIRE)
+        else:
+            raise PersonStatusError('Person can not be resume')
+        return self
+
     @hybrid_property
     def status(self):
         return self._status
 
     @hybrid_property
     def can_reg(self):
+        if self.status is not None:
+            return false()
         now = datetime.datetime.now()
         now = datetime.date(now.year, now.month, now.day)
         earlist_engage_day = datetime.date(
             self.birthday.year + _MIN_ENGAGE_IN_AGE, self.birthday.month,
             self.birthday.day)
-        return self.status is None and now > earlist_engage_day
+        return now > earlist_engage_day
 
-    @property
+    @hybrid_property
     def can_normal(self):
         return self.__status_is(self.REG)
 
-    @property
+    @hybrid_property
     def can_abort_normal(self):
         return self.__status_is(self.NORMAL)
 
-    @property
+    @hybrid_property
     def can_abort_retire(self):
         return self.__status_in(self.NORMAL_RETIRE, self.SUSPEND_RETIRE)
 
-    @property
+    @hybrid_property
     def can_retire(self):
         return self.__status_is(self.NORMAL)
 
-    @property
+    @hybrid_property
     def can_suspend(self):
         return self.__status_is(self.NORMAL_RETIRE)
 
-    @property
+    @hybrid_property
     def can_resume(self):
         return self.__status_in(self.SUSPEND_RETIRE)
 
-    @property
+    @hybrid_property
     def can_dead_retire(self):
         return self.__status_in(self.NORMAL_RETIRE, self.SUSPEND_RETIRE)
 
-    @property
+    @hybrid_property
     def can_dead_unretire(self):
         return self.__status_in(self.NORMAL)
 

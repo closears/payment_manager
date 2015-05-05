@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+{% if message %}<div>{{ message }}</div>{% endif %}
+<form method='POST'>
+  {{ form.hidden_tag() }}
+  <input type='submit' value='submit'>
+</form>
+{% endblock %}

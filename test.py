@@ -1,4 +1,5 @@
 import os
+from datetime import date
 import tempfile
 import unittest
 from werkzeug import MultiDict
@@ -355,7 +356,7 @@ class AdminTestCase(TestBase):
             'admin_log_search',
             operator_id=admin.id,
             start_date='2015-01-01',
-            end_date='2015-05-01',
+            end_date='2015-12-31',
             page=1,
             per_page=20))
         self.assertIn('login', rv.data)
@@ -368,7 +369,7 @@ class AdminTestCase(TestBase):
             'admin_log_search',
             operator_id=admin.id,
             start_date='2015-01-01',
-            end_date='2015-05-01',
+            end_date='2015-12-31',
             page=1,
             per_page=20))
         self.assertIn('login', rv.data)
@@ -385,7 +386,7 @@ class AdminTestCase(TestBase):
             url_for('admin_log_clean', operator_id=admin.id),
             data=dict(
                 start_date='2015-01-01',
-                end_date='2015-05-01'))
+                end_date='2015-12-31'))
         self.assertFalse(admin.logs)
 
 
@@ -495,9 +496,22 @@ class PersonTestCase(TestBase):
         self.admin.address = parent
         db.session.commit()
 
+    def __add_person(self, idcard, birthday, name, address_id):
+        from uuid import uuid4
+        self.client.post(url_for('person_add'), data=dict(
+            idcard=idcard,
+            birthday=birthday,
+            name=name,
+            address_id=address_id,
+            address_detail='xxxx',
+            securi_no=uuid4().hex,
+            personal_wage='0.94'))
+
+    def __remove_person(self, pk):
+        self.client.post(url_for('person_delete', pk=pk))
+
     def test(self):
         person = Person()
-        from datetime import date
         person.birthday = date(1951, 7, 1)
         person.reg()
         self.assertIsNotNone(person.status)
@@ -514,7 +528,6 @@ class PersonTestCase(TestBase):
         person = Person()
         form.populate_obj(person)
         self.assertEqual(person.idcard, '420525195107010010')
-        from datetime import date
         self.assertEqual(person.birthday, date(1951, 7, 1))
 
     def test_person_add(self):
@@ -522,14 +535,8 @@ class PersonTestCase(TestBase):
         rv = self.client.get(url_for('person_add'))
         self.assert_200(rv)
         address = Address.query.filter(Address.name == 'parent').one()
-        self.client.post(url_for('person_add'), data=dict(
-            idcard='420525195107010010',
-            birthday='1951-07-01',
-            name='test',
-            address_id=address.id,
-            address_detail='xxxx',
-            securi_no='123123',
-            personal_wage='0.94'))
+        self.__add_person(
+            '420525195107010010', '1951-07-01', 'test', address.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.assertIsNotNone(person)
@@ -551,6 +558,7 @@ class PersonTestCase(TestBase):
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.assertIsNotNone(person)
+        self.assertEqual(Person.STATUS_CHOICES[Person.REG][0], person.status)
         persons = Person.query.filter(Person.id == person.id).all()
         self.assertTrue(persons)
         rv = self.client.get(url_for('person_delete', pk=person.id))
@@ -559,6 +567,143 @@ class PersonTestCase(TestBase):
         persons = Person.query.filter(Person.id == person.id).all()
         self.assertFalse(persons)
 
+    def test_person_normal_reg(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(url_for('person_normal_reg', pk=person.id))
+        self.assertTrue(person.can_retire)
+        self.__remove_person(person.id)
+
+    def test_person_retire_reg(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(url_for('person_normal_reg', pk=person.id))
+        self.client.post(url_for('person_regire_reg', pk=person.id), data={
+            'date': '2011-08-01'})
+        self.assertEqual(date(2011, 8, 1), person.retire_day)
+        self.__remove_person(person.id)
+
+    def test_person_batch_normal(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        map(lambda x: self.__add_person(
+            '4205251951070100{:0>2}'.format(x),
+            '1951-07-{:0>2}'.format(x), 'test{}'.format(x), addr.id),
+            range(10))
+        self.assertGreaterEqual(Person.query.filter(
+            Person.idcard.like('420525195107%')).all(), 10)
+        self.assertIn('420525195107',
+                      [p.idcard[:12] for p in Person.query.all()])
+        self.client.post(url_for('person_batch_normal'), data=dict(
+            start_date='1951-07-01', end_date='1951-07-31'))
+        for person in Person.query.filter(
+                Person.idcard.like('420525195107%')).all():
+            self.assertTrue(person.can_retire)
+        map(lambda x: self.__remove_person(x),
+            [p.id for p in
+             Person.query.filter(Person.idcard.like('420525195107%')).all()])
+        self.assertNotIn('420525195107',
+                         [p.idcard[:12] for p in Person.query.all()])
+
+    def test_person_dead_reg(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        rv = self.client.post(url_for('person_dead_reg', pk=person.id),
+                              data=dict(date='2015-07-01'))
+        self.assert500(rv)
+        self.assertFalse(person.can_retire)
+        self.client.post(url_for('person_normal_reg', pk=person.id))
+        self.assertTrue(person.can_retire)
+        self.client.post(url_for('person_dead_reg', pk=person.id),
+                         data=dict(date='2015-07-01'))
+        self.assertEqual(person.dead_day, date(2015, 7, 1))
+        self.__remove_person(person.id)
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(url_for('person_normal_reg', pk=person.id))
+        self.client.post(url_for('person_regire_reg', pk=person.id),
+                         data=dict(date='2011-08-01'))
+        self.assertTrue(person.can_dead_retire)
+        self.client.post(url_for('person_dead_reg', pk=person.id),
+                         data=dict(date='2015-07-01'))
+        self.assertEqual(person.dead_day, date(2015, 7, 1))
+        self.__remove_person(person.id)
+
+    def test_person_abort_reg(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        rv = self.client.post(url_for('person_abort_reg', pk=person.id))
+        self.assert500(rv)
+        rv = self.client.post(url_for('person_normal_reg', pk=person.id))
+        self.assert200(rv)
+        rv = self.client.post(url_for('person_abort_reg', pk=person.id))
+        self.assert200(rv)
+        self.assertFalse(person.can_retire)
+        self.assertFalse(person.can_normal)
+        self.__remove_person(person.id)
+
+    def test_person_suspend_reg(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        rv = self.client.post(url_for('person_suspend_reg', pk=person.id))
+        self.assert403(rv)
+        self.client.post(url_for('admin_role_add'),
+                         data=dict(name='person_admin'))
+        role = Role.query.filter(Role.name == 'person_admin').one()
+        self.client.post(url_for('admin_user_add_role', pk=self.admin.id),
+                         data=dict(role=role.id))
+        rv = self.client.post(url_for('person_suspend_reg', pk=person.id))
+        self.assert200(rv)
+        self.assertTrue(person.can_resume)
+        self.client.post(url_for('admin_user_remove_role', pk=self.admin.id),
+                         data=dict(role=role.id))
+        self.client.post(url_for('admin_role_remove', pk=role.id))
+        self.__remove_person(person.id)
+
+    def test_person_resume_reg(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        rv = self.client.post(url_for('person_resume_reg', pk=person.id))
+        self.assert403(rv)
+        self.client.post(url_for('admin_role_add'),
+                         data=dict(name='person_admin'))
+        role = Role.query.filter(Role.name == 'person_admin').one()
+        self.client.post(url_for('admin_user_add_role', pk=self.admin.id),
+                         data=dict(role=role.id))
+        rv = self.client.post(url_for('person_resume_reg', pk=person.id))
+        self.assert200(rv)
+        self.assertTrue(person.can_suspend)
+        self.client.post(url_for('admin_user_remove_role', pk=self.admin.id),
+                         data=dict(role=role.id))
+        self.client.post(url_for('admin_role_remove', pk=role.id))
+        self.__remove_person(person.id)
+    
 
 def run_test():
     db.create_all()

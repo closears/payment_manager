@@ -3,7 +3,7 @@ from wtforms_alchemy import model_form_factory
 from wtforms import (
     PasswordField, TextField, SelectField, DateField)
 from wtforms.validators import Required, EqualTo
-from controller import db
+from models import db
 from models import User, Role, Address, Person
 
 
@@ -19,6 +19,10 @@ class ModelForm(BaseModelForm):
 class PeroidForm(Form):
     start_date = DateField(unicode('start date'))
     end_date = DateField(unicode('end date'))
+
+
+class DateForm(Form):
+    date = DateField(unicode('date'), validators=[Required()])
 
 
 class LoginForm(Form):
@@ -133,7 +137,7 @@ class PersonForm(ModelForm):
     def populate_obj(self, person):
         super(PersonForm, self).populate_obj(person)
         person.create_by = self.user
-        if person.can_reg:
+        if person.status is None:
             person.reg()
 
     class Meta:
