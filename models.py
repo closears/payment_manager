@@ -179,13 +179,13 @@ class PersonStandardAssoc(db.Model):
         db.Integer,
         db.ForeignKey('persons.id')
     )
-    person = db.relationship('Person', backref='assoces')
+    person = db.relationship('Person', backref='stand_assoces')
     standard_id = db.Column(
         'standard_id',
         db.Integer,
         db.ForeignKey('standards.id')
     )
-    standard = db.relationship('Standard', backref='assoces')
+    standard = db.relationship('Standard', backref='person_assoces')
     _start_date = db.Column('start_date', db.Date, nullable=False)
     _end_date = db.Column('end_date', db.Date)
 

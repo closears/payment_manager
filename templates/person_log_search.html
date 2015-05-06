@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}person search{% endblock %}
+{% block content %}
+<div>
+  <form method='GET'>
+    <div>
+      <label for='start_date'>start date</label>
+      <input id='start_date' name='start_date'>
+    </div>
+    <div>
+      <label for='end_date'>end date</label>
+      <input id='end_date' name='end_date'>
+    </div>
+    <div>
+      <label for='operator_id'>operator id</label>
+      <input id='operator_id' name='operator_id'>
+    </div>
+    <input type='hidden' name='page' value='1'>
+    <div>
+      <label for='per_page'>per page</label>
+      <input id='per_page' name='per_page'>
+    </div>
+    <input type='submit' value='search'>
+  </form>
+</div>
+<div>
+  <table>
+    <thead>
+      <th>
+	<td>operator</td>
+	<td>method</td>
+	<td>remark</td>
+	<td>time</td>
+      </th>
+    </thead>
+    <tbody>
+      {% for item in pagination.items %}
+      <tr>
+	<td>{{ item.operator.name }}</td>
+	<td>{{ item.method }}</td>
+	<td>{{ item.remark }}</td>
+	<td>{{ item.time }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% from 'widgets.html' import render_pagination as paginate %}
+{% if pagination.has_next %}
+{{ paginate(pagination) }}
+{% endif %}
+{% endblock %}

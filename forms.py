@@ -1,10 +1,11 @@
+from sqlalchemy import exists, and_
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
 from wtforms import (
     PasswordField, TextField, SelectField, DateField)
 from wtforms.validators import Required, EqualTo
 from models import db
-from models import User, Role, Address, Person
+from models import User, Role, Address, Person, Standard, PersonStandardAssoc
 
 
 BaseModelForm = model_form_factory(Form)
@@ -144,3 +145,36 @@ class PersonForm(ModelForm):
         model = Person
         only = ['idcard', 'name',  'address_detail',
                 'securi_no', 'personal_wage']
+
+
+class StandardForm(ModelForm):
+
+    class Meta:
+        model = Standard
+
+
+class StandardAddForm(Form):
+
+    standard_id = SelectField('standard', validators=[Required()], coerce=int)
+    start_date = DateField('start date', validators=[Required()])
+    end_date = DateField('end date')
+
+    def __init__(self, person, **kwargs):
+        super(StandardAddForm, self).__init__(**kwargs)
+        self.person = person
+        stmt = exists().where(and_(
+            Person.id == PersonStandardAssoc.person_id,
+            PersonStandardAssoc.standard_id == Standard.id,
+            Person.id == person.id))
+        self.standard_id.choices = map(lambda s: (s.id, s.name),
+                                       Standard.query.filter(~stmt).all())
+
+    def populate_obj(self, person):
+        assoc = PersonStandardAssoc(
+            person=self.person,
+            standard_id=self.standard_id.data,
+            start_date=self.start_date.data,
+            end_date=self.end_date.data
+        )
+        db.session.add(assoc)
+        person.stand_assoces.append(assoc)

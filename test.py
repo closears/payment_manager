@@ -8,7 +8,7 @@ from flask import request, url_for
 from sqlalchemy.orm.exc import NoResultFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
-from models import User, Role, Address, Person
+from models import User, Role, Address, Person, Standard
 from forms import LoginForm, AdminAddRoleForm, PersonForm
 
 
@@ -703,7 +703,99 @@ class PersonTestCase(TestBase):
                          data=dict(role=role.id))
         self.client.post(url_for('admin_role_remove', pk=role.id))
         self.__remove_person(person.id)
+
+    def test_person_update(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(url_for('person_update', pk=person.id), data=dict(
+            idcard='420525195107020011',
+            name='test2',
+            address_detail='no.1',
+            securi_no='14124',
+            personal_wage='11.94',
+            address_id=addr.id,
+            birthday='1951-07-02'))
+        self.assertEqual('420525195107020011', person.idcard)
+        self.assertEqual(date(1951, 7, 2), person.birthday)
+        rv = self.client.get(url_for('person_update', pk=person.id))
+        self.assertIn('1951-07-02', rv.data)
+        self.__remove_person(person.id)
+
+    def test_person_log_search(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        for i in range(10):
+            self.__add_person(
+                '4205251951070100{:0>2}'.format(i),
+                '1951-07-01',
+                'test',
+                addr.id)
+        person = Person.query.filter(
+            Person.idcard.like('4205251951070100%')).first()
+        rv = self.client.get(url_for('person_log_search',
+                                     pk=person.id,
+                                     start_date='2015-01-01',
+                                     end_date='2015-12-31',
+                                     operator_id=self.admin.id,
+                                     page=1,
+                                     per_page=10))
+        self.assert200(rv)
+        map(lambda p: db.session.delete(p), Person.query.filter(
+            Person.idcard.like('4205251951070100%')).all())
+        db.session.commit()
+        self.client.post(url_for('admin_log_clean', operator_id=self.admin.id))
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        for i in range(10):
+            self.client.post(url_for('person_update', pk=person.id),
+                             data=dict(
+                                 idcard='420525195107020011',
+                                 name='test2',
+                                 address_detail='no.1',
+                                 securi_no='14124',
+                                 personal_wage='11.94',
+                                 address_id=addr.id,
+                                 birthday='1951-07-02'))
+        rv = self.client.get(url_for('person_log_search',
+                                     pk=person.id,
+                                     start_date='2015-01-01',
+                                     end_date='2015-12-31',
+                                     operator_id=self.admin.id,
+                                     page=1,
+                                     per_page=10))
+        self.assertIn('person_update', rv.data)
+        self.assertIn('person_add', rv.data)
+        self.__remove_person(person.id)
+
+
+class StandardTestCase(TestBase):
     
+    def setUp(self):
+        super(StandardTestCase, self).setUp()
+        role = Role(name='admin')
+        db.session.add(role)
+        self.admin = User.query.filter(User.name == 'admin').one()
+        self.admin.roles.append(role)
+        db.session.commit()
+
+    def test_standard_add(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get(url_for('standard_add'))
+        self.assert200(rv)
+        self.client.post(url_for('standard_add'), data=dict(
+            name='test1',
+            money='100'))
+        standard = Standard.query.filter(Standard.name == 'test1').one()
+        self.assertEqual(100, standard.money)
+        db.session.delete(standard)
+        db.session.commit()
+
 
 def run_test():
     db.create_all()

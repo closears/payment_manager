@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy.orm.exc import NoResultFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
@@ -13,12 +13,12 @@ from flask_principal import (
     identity_changed, Identity)
 from models import (
     app, db, User, Role, Address, Person, OperationLog, PersonStatusError,
-    PersonAgeError)
+    PersonAgeError, Standard)
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
-    DateForm)
+    DateForm, StandardForm)
 
 
 def __find_obj_or_404(cls, id_field, pk):
@@ -38,7 +38,21 @@ class RegexConverter(BaseConverter):
         self.map = map
         self.regex = args[0]
 
+
+class DateConverter(BaseConverter):
+    def __init__(self, map, *args):
+        self.map = map
+        self.regex = r'\d{4}-\d{2}-\d{2}'
+
+    def to_python(self, value):
+        return datetime.strptime(value, '%Y-%m-%d')
+
+    def to_url(self, value):
+        return value.strftime('%Y-%m-%d') if isinstance(
+            value, (datetime, date)) else value
+
 app.url_map.converters['regex'] = RegexConverter
+app.url_map.converters['date'] = DateConverter
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -402,13 +416,9 @@ def admin_role_remove(pk):
             'confirm delete the role:{}').format(role.name))
 
 
-date_regex = r"(:?\d{4}-\d{2}-\d{2})"
-
-
 @app.route(
     '/admin/log/search?operator-id=<int:operator_id>' +
-    '&start_date=<regex("{}"):start_date>'.format(date_regex) +
-    '&end_date=<regex("{}"):end_date>'.format(date_regex) +
+    '&start_date=<date:start_date>&end_date=<date:end_date>' +
     '&page=<int:page>&per_page=<int:per_page>',
     methods=['GET']
 )
@@ -522,7 +532,7 @@ def address_search(name, page, per_page):
 
 @app.route('/person/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }}')
+@OperationLog.log_template('{{ person.id }},')
 def person_add():
     form = PersonForm(current_user, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -534,6 +544,7 @@ def person_add():
             db.session.rollback()
             abort(500)
         db.session.add(person)
+        db.session.commit()
         OperationLog.log(db.session, current_user, person=person)
         db.session.commit()
         return 'success'
@@ -542,7 +553,7 @@ def person_add():
 
 @app.route('/person/<int:pk>/delete', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }}')
+@OperationLog.log_template('{{ person.id }},')
 def person_delete(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(formdata=request.form)
@@ -558,7 +569,7 @@ def person_delete(pk):
 
 @app.route('/person/<int:pk>/retire_reg', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }}')
+@OperationLog.log_template('{{ person.id }},')
 def person_regire_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = DateForm(formdata=request.form)
@@ -577,7 +588,7 @@ def person_regire_reg(pk):
 
 @app.route('/person/<int:pk>/normal_reg', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }}')
+@OperationLog.log_template('{{ person.id }},')
 def person_normal_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -596,7 +607,7 @@ def person_normal_reg(pk):
 
 @app.route('/person/batch_normal', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }}')
+@OperationLog.log_template('{{ person.id }},')
 def person_batch_normal():
     form = PeroidForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -614,7 +625,7 @@ def person_batch_normal():
 
 @app.route('/person/<int:pk>/dead_reg', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }}')
+@OperationLog.log_template('{{ person.id }},')
 def person_dead_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = DateForm(request.form)
@@ -633,7 +644,7 @@ def person_dead_reg(pk):
 
 @app.route('/person/<int:pk>/abort_reg', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }}')
+@OperationLog.log_template('{{ person.id }},')
 def person_abort_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -671,7 +682,7 @@ def person_suspend_reg(pk):
 
 @app.route('/person/<int:pk>/resume', methods=['GET', 'POST'])
 @person_admin_required
-@OperationLog.log_template('{{ person.id }}')
+@OperationLog.log_template('{{ person.id }},')
 def person_resume_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -703,4 +714,43 @@ def person_update(pk):
     return render_template('person_edit.html', form=form)
 
 
-# TODO add person log search, person standard add
+@app.route('/person/<int:pk>/logsearch?' +
+           'startdate=<date:start_date>&enddate=<date:end_date>' +
+           '&operatorid=<int:operator_id>' +
+           '&page=<int:page>&perpage=<int:per_page>', methods=['GET'])
+@login_required
+def person_log_search(pk, start_date, end_date, operator_id, page, per_page):
+    query = OperationLog.query.filter(
+        OperationLog.method.in_([m.__name__ for m in (
+            person_abort_reg,
+            person_add,
+            person_batch_normal,
+            person_dead_reg,
+            person_delete,
+            person_normal_reg,
+            person_regire_reg,
+            person_resume_reg,
+            person_suspend_reg,
+            person_update)])).filter(
+                OperationLog.remark.like('{},%'.format(pk))).filter(
+                    OperationLog.time >= start_date).filter(
+                        OperationLog.time <= end_date).filter(
+                            OperationLog.operator_id == operator_id)
+    return render_template('person_log_search.html',
+                           pagination=query.paginate(page, per_page))
+
+
+@app.route('/standard/add', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ standard.id }}')
+def standard_add():
+    form = StandardForm(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        standard = Standard()
+        form.populate_obj(standard)
+        db.session.add(standard)
+        db.session.commit()
+        return 'success'
+    return render_template('standard_edit.html', form=form)
+
+# TODO add person standard add
