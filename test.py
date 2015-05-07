@@ -8,7 +8,7 @@ from flask import request, url_for
 from sqlalchemy.orm.exc import NoResultFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
-from models import User, Role, Address, Person, Standard
+from models import User, Role, Address, Person, Standard, Bankcard
 from forms import LoginForm, AdminAddRoleForm, PersonForm
 
 
@@ -70,6 +70,7 @@ class TestBase(TestCase):
             user = User.query.filter(User.name == 'admin').one()
         except NoResultFound:
             user = User(name='admin', password='admin')
+            self.admin = user
             db.session.add(user)
             db.session.commit()
 
@@ -491,7 +492,6 @@ class PersonTestCase(TestBase):
         child2.childs.extend([child21, child22])
         db.session.add(parent)
         parent.childs.extend([child1, child2])
-        self.admin = User.query.filter(User.name == 'admin').one()
         self.admin.roles.append(Role(name='admin'))
         self.admin.address = parent
         db.session.commit()
@@ -773,14 +773,50 @@ class PersonTestCase(TestBase):
         self.assertIn('person_add', rv.data)
         self.__remove_person(person.id)
 
+    def test_standard_bind(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        addr = Address.query.filter(Address.name == 'parent').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        rv = self.client.get(url_for('standard_bind', pk=person.id))
+        self.assertIn('standard_id', rv.data)
+        self.assertIn('start_date', rv.data)
+        self.assertIn('end_date', rv.data)
+        standard = Standard(name='test', money='100')
+        db.session.add(standard)
+        db.session.commit()
+
+        def bind():
+            return self.client.post(url_for('standard_bind', pk=person.id),
+                                    data=dict(
+                                        standard_id=standard.id,
+                                        start_date='2011-08-01',
+                                        end_date='2015-07-01'))
+        rv = bind()
+        self.assert500(rv)
+        self.client.post(url_for('person_normal_reg', pk=person.id))
+        self.client.post(
+            url_for('person_regire_reg', pk=person.id),
+            data={'date': '2011-08-01'})
+        self.assertEqual(date(2011, 8, 1), person.retire_day)
+        self.assertTrue(person.is_valid_standard_wages)
+        bind()
+        self.assertEqual(100, person.standard_wages[0].money)
+        db.session.delete(person.stand_assoces[0])
+        db.session.commit()
+        db.session.delete(standard)
+        db.session.commit()
+        self.__remove_person(person.id)
+
 
 class StandardTestCase(TestBase):
-    
+
     def setUp(self):
         super(StandardTestCase, self).setUp()
         role = Role(name='admin')
         db.session.add(role)
-        self.admin = User.query.filter(User.name == 'admin').one()
         self.admin.roles.append(role)
         db.session.commit()
 
@@ -794,6 +830,77 @@ class StandardTestCase(TestBase):
         standard = Standard.query.filter(Standard.name == 'test1').one()
         self.assertEqual(100, standard.money)
         db.session.delete(standard)
+        db.session.commit()
+
+
+class BankcardTestCase(TestBase):
+    def setUp(self):
+        super(BankcardTestCase, self).setUp()
+        role = Role(name='admin')
+        db.session.add(role)
+        db.session.commit()
+        self.admin.roles.append(role)
+        db.session.commit()
+        addr = Address(no='6228410770613888888', name='test')
+        self.addr = addr
+        db.session.add(addr)
+        db.session.commit()
+        self.admin.address = addr
+        db.session.commit()
+
+    def __add_person(self, idcard, birthday, name, address_id):
+        from uuid import uuid4
+        self.client.post(url_for('person_add'), data=dict(
+            idcard=idcard,
+            birthday=birthday,
+            name=name,
+            address_id=address_id,
+            address_detail='xxxx',
+            securi_no=uuid4().hex,
+            personal_wage='0.94'))
+
+    def test_bankcard_add(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get(url_for('bankcard_add'))
+        self.assertIn('no', rv.data)
+        self.assertIn('name', rv.data)
+        self.assertIn('submit', rv.data)
+        self.client.post(url_for('bankcard_add'), data=dict(
+            no='6228410770613888888', name='test'))
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        self.assertEqual(bankcard.name, 'test')
+        db.session.delete(bankcard)
+        db.session.commit()
+
+    def test_bankcard_bind(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('bankcard_add'), data=dict(
+            no='6228410770613888888', name='test'))
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        self.__add_person('420525195107010010', '1951-07-01', 'test',
+                          self.addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard.id), data={
+            'idcard': '420525195107010010'})
+        self.assertEqual('420525195107010010', bankcard.owner.idcard)
+        db.session.delete(bankcard)
+        db.session.commit()
+        db.session.delete(person)
+        db.session.commit()
+
+    def test_bankcard_update(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('bankcard_add'), data=dict(
+            no='6228410770613888888', name='test'))
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        self.client.post(url_for('bankcard_update', pk=bankcard.id),
+                         data=dict(no='6228410770613888888', name='test2'))
+        self.assertEqual(bankcard.name, 'test2')
+        db.session.delete(bankcard)
         db.session.commit()
 
 

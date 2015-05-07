@@ -1,11 +1,11 @@
-from sqlalchemy import exists, and_
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
 from wtforms import (
     PasswordField, TextField, SelectField, DateField)
 from wtforms.validators import Required, EqualTo
 from models import db
-from models import User, Role, Address, Person, Standard, PersonStandardAssoc
+from models import (
+    User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard)
 
 
 BaseModelForm = model_form_factory(Form)
@@ -131,9 +131,13 @@ class PersonForm(ModelForm):
     def __init__(self, user, **kwargs):
         super(PersonForm, self).__init__(**kwargs)
         self.user = user
-        addresses = [a for a in user.address.descendants]
-        addresses.append(user.address)
+        if user.address:
+            addresses = [a for a in user.address.descendants]
+            addresses.append(user.address)
+        else:
+            addresses = []
         self.address_id.choices = map(lambda x: (x.id, x.name), addresses)
+        self.address_id.choices.append((None, ''))
 
     def populate_obj(self, person):
         super(PersonForm, self).populate_obj(person)
@@ -153,21 +157,19 @@ class StandardForm(ModelForm):
         model = Standard
 
 
-class StandardAddForm(Form):
+class StandardBindForm(Form):
 
-    standard_id = SelectField('standard', validators=[Required()], coerce=int)
+    standard_id = SelectField(
+        'standard', validators=[Required()], coerce=lambda x: x and int(x))
     start_date = DateField('start date', validators=[Required()])
     end_date = DateField('end date')
 
     def __init__(self, person, **kwargs):
-        super(StandardAddForm, self).__init__(**kwargs)
+        super(StandardBindForm, self).__init__(**kwargs)
         self.person = person
-        stmt = exists().where(and_(
-            Person.id == PersonStandardAssoc.person_id,
-            PersonStandardAssoc.standard_id == Standard.id,
-            Person.id == person.id))
         self.standard_id.choices = map(lambda s: (s.id, s.name),
-                                       Standard.query.filter(~stmt).all())
+                                       Standard.query.all())
+        self.standard_id.choices.append((None, ''))
 
     def populate_obj(self, person):
         assoc = PersonStandardAssoc(
@@ -177,4 +179,14 @@ class StandardAddForm(Form):
             end_date=self.end_date.data
         )
         db.session.add(assoc)
-        person.stand_assoces.append(assoc)
+
+
+class BankcardForm(ModelForm):
+
+    class Meta:
+        model = Bankcard
+        only = ['no', 'name']
+
+
+class BankcardBindForm(Form):
+    idcard = TextField('idcard', validators=[Required()])

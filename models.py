@@ -170,9 +170,6 @@ class Address(db.Model):
 
 class PersonStandardAssoc(db.Model):
     __tablename__ = 'person_standard'
-    __table_args__ = (
-        db.UniqueConstraint('person_id', 'standard_id'),
-    )
     id = db.Column('id', db.Integer, primary_key=True)
     person_id = db.Column(
         'person_id',
@@ -220,12 +217,18 @@ class PersonStandardAssoc(db.Model):
 
     @end_date.setter
     def end_date(self, val):
+        if self.start_date is not None and val <= self.start_date:
+            raise DateError("end date can't earler than start date")
         self._end_date = val
 
     @hybrid_property
     def effective(self):
         return or_(
             self.end_date.is_(None), self.end_date >= datetime.datetime.now())
+
+
+class DateError(RuntimeError):
+    pass
 
 
 class Person(db.Model):
@@ -240,7 +243,7 @@ class Person(db.Model):
                                                             order_by=id))
     address_detail = db.Column(db.String, nullable=False)
     securi_no = db.Column(db.String, nullable=False, unique=True)
-    personal_wage = db.Column(db.Float(precision=2), nullable=False,
+    _personal_wage = db.Column(db.Float(precision=2), nullable=False,
                               default=0.0)
     standard_wages = db.relationship(
         'Standard',
@@ -291,6 +294,17 @@ class Person(db.Model):
             name=self.name,
             status=self.status
         ))
+
+    @hybrid_property
+    def personal_wage(self):
+        return self._personal_wage
+
+    @personal_wage.setter
+    def personal_wage(self, val):
+        if self.status != self.__status_str(self.NORMAL_RETIRE):
+            self._personal_wage = 0.0
+        else:
+            self._personal_wage = val
 
     @hybrid_property
     def birthday(self):
@@ -424,6 +438,23 @@ class Person(db.Model):
     @hybrid_property
     def can_dead_unretire(self):
         return self.__status_in(self.NORMAL)
+
+    @property
+    def is_valid_standard_wages(self):
+        if self.status != self.__status_str(self.NORMAL_RETIRE):
+            return False
+        for assoc in self.stand_assoces:
+            if assoc.start_date < self.retire_day:
+                return False
+        if not self.stand_assoces:
+            return True
+        date_lst = map(lambda a: (a.start_date, a.end_date),
+                       self.stand_assoces)
+        date_lst.sort(key=lambda x: x[0])
+
+        def f(x, y):
+            return (x[1] or False) and x[1] <= y[0] and y
+        return reduce(lambda x, y: x and f(x, y), date_lst) and True
 
 
 class PersonStatusError(RuntimeError):

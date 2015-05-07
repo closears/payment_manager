@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}bankcard add{% endblock %}
+{% block content %}
+<form method='POST'>
+  {{ form.hidden_tag() }}
+  <div>
+    {{ form.no.label }}
+    {{ form.no }}
+  </div>
+  <div>
+    {{ form.name.label }}
+    {{ form.name }}
+  </div>
+  <input type='submit' value='submit'>
+</form>
+{% endblock %}

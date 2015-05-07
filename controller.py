@@ -1,5 +1,5 @@
 from datetime import datetime, date
-from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
 import flask
@@ -13,12 +13,12 @@ from flask_principal import (
     identity_changed, Identity)
 from models import (
     app, db, User, Role, Address, Person, OperationLog, PersonStatusError,
-    PersonAgeError, Standard)
+    PersonAgeError, Standard, Bankcard)
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
-    DateForm, StandardForm)
+    DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm)
 
 
 def __find_obj_or_404(cls, id_field, pk):
@@ -231,6 +231,7 @@ def admin_add_user():
         user = User()
         form.populate_obj(user)
         db.session.add(user)
+        db.session.commit()
         OperationLog.log(db.session, current_user, user=user)
         db.session.commit()
         return 'success'
@@ -390,6 +391,8 @@ def admin_role_add():
         form.populate_obj(role)
         db.session.add(role)
         db.session.commit()
+        OperationLog.log(db.session, current_user, role=role)
+        db.session.commit()
         return 'success'
     return render_template('admin_role_add.html', form=form)
 
@@ -467,6 +470,7 @@ def address_add():
         address = Address()
         form.populate_obj(address)
         db.session.add(address)
+        db.session.commit()
         OperationLog.log(db.session, current_user, address=address)
         db.session.commit()
         if address.descendant_of(current_user.address):
@@ -553,7 +557,7 @@ def person_add():
 
 @app.route('/person/<int:pk>/delete', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }},')
+@OperationLog.log_template('{{ person.id }},{{ person.idcard }}')
 def person_delete(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(formdata=request.form)
@@ -714,6 +718,24 @@ def person_update(pk):
     return render_template('person_edit.html', form=form)
 
 
+@app.route('/person/<int:pk>/standardbind', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ person.id }},{{ form.standard_id.data }}')
+def standard_bind(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = StandardBindForm(person, formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        form.populate_obj(person)
+        if not person.is_valid_standard_wages:
+            db.session.rollback()
+            flash("person's standard wages were conflict")
+            abort(500)
+        OperationLog.log(db.session, current_user, person=person, form=form)
+        db.session.commit()
+        return 'success'
+    return render_template('standard_bind.html', form=form)
+
+
 @app.route('/person/<int:pk>/logsearch?' +
            'startdate=<date:start_date>&enddate=<date:end_date>' +
            '&operatorid=<int:operator_id>' +
@@ -750,7 +772,64 @@ def standard_add():
         form.populate_obj(standard)
         db.session.add(standard)
         db.session.commit()
+        OperationLog.log(db.session, current_user, standard=standard)
+        db.session.commit()
         return 'success'
     return render_template('standard_edit.html', form=form)
 
-# TODO add person standard add
+
+@app.route('/bankcard/add', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ bankcard.id }}')
+def bankcard_add():
+    form = BankcardForm(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        bankcard = Bankcard()
+        form.populate_obj(bankcard)
+        bankcard.create_by = current_user
+        db.session.commit()
+        OperationLog.log(db.session, current_user, bankcard=bankcard)
+        db.session.commit()
+        return 'success'
+    return render_template('bankcard_edit.html', form=form)
+
+
+@app.route('/bankcard/<int:pk>/bind/', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ bankcard.id }},{{ bankcard.owner.idcard }}')
+def bankcard_bind(pk):
+    bankcard = db.my_get_obj_or_404(Bankcard, Bankcard.id, pk)
+    form = BankcardBindForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        try:
+            person = Person.query.filter(
+                Person.idcard == form.idcard.data).one()
+        except NoResultFound:
+            flash(unicode('no person find by idcard:{}').format(
+                form.idcard.data))
+            abort(404)
+        except MultipleResultsFound:
+            flash(unicode('the condition({}) is too blurred').format(
+                form.idcard.data))
+            abort(500)
+        bankcard.owner = person
+        OperationLog.log(db.session, current_user, bankcard=bankcard)
+        db.session.commit()
+        return 'success'
+
+
+@app.route('/bankcard/<int:pk>/update', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ bankcard.id }}')
+def bankcard_update(pk):
+    bankcard = db.my_get_obj_or_404(Bankcard, Bankcard.id, pk)
+    form = BankcardForm(formdata=request.form, obj=bankcard)
+    if request.method == 'POST' and form.validate_on_submit():
+        form.populate_obj(bankcard)
+        OperationLog.log(db.session, current_user, bankcard=bankcard)
+        db.session.commit()
+        return 'success'
+    return render_template('bankcard_edit.html', form=form)
+
+
+# TODO add bankcard delete

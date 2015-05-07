@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}standard bind{% endblock %}
+{% block content %}
+<form method='POST'>
+  {{ form.hidden_tag() }}
+  <div>
+    {{ form.standard_id.label }}
+    {{ form.standard_id }}
+  </div>
+  <div>
+    {{ form.start_date.label }}
+    {{ form.end_date }}
+  </div>
+  <div>
+    {{ form.end_date.label }}
+    {{ form.end_date }}
+  </div>
+  <input type='submit' value='submit'>
+</form>
+{% endblock %}
