@@ -773,6 +773,28 @@ class PersonTestCase(TestBase):
         self.assertIn('person_add', rv.data)
         self.__remove_person(person.id)
 
+    def test_person_search(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.__add_person('420525195107010010', '1951-07-01', 'test',
+                          self.admin.address.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        rv = self.client.get(url_for('person_search',
+                                     idcard='420525',
+                                     name='tes',
+                                     address='p',
+                                     page=1,
+                                     per_page=2))
+        self.assertIn('test', rv.data)
+        rv = self.client.get(url_for('person_search',
+                                     idcard='420525',
+                                     name='tes',
+                                     address='None',
+                                     page=1,
+                                     per_page=2))
+        self.assertIn('test', rv.data)
+        self.__remove_person(person.id)
+
     def test_standard_bind(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -901,6 +923,34 @@ class BankcardTestCase(TestBase):
                          data=dict(no='6228410770613888888', name='test2'))
         self.assertEqual(bankcard.name, 'test2')
         db.session.delete(bankcard)
+        db.session.commit()
+
+    def test_bankcard_search(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('bankcard_add'), data=dict(
+            no='6228410770613888888', name='test'))
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        rv = self.client.get(url_for(
+            'bankcard_search',
+            no='622841', name='te', idcard='None', page=1, per_page=2))
+        self.assertNotIn('test', rv.data)
+        self.__add_person('420525195107010010', '1951-07-01', 'test',
+                          self.addr.id)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard.id), data=dict(
+            idcard='420525195107010010'))
+        rv = self.client.get(url_for(
+            'bankcard_search',
+            no='622841', name='te', idcard='None', page=1, per_page=2))
+        self.assertIn('test', rv.data)
+        self.client.post(url_for('bankcard_update', pk=bankcard.id),
+                         data=dict(no='6228410770613888888', name='test2'))
+        self.assertEqual(bankcard.name, 'test2')
+        db.session.delete(bankcard)
+        db.session.commit()
+        db.session.delete(person)
         db.session.commit()
 
 

@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}person search{% endblock %}
+{% block content %}
+<form method='GET'>
+  <div>
+    <label for='idcard'>begin of idcard</label>
+    <input id='idcard' name='idcard'>
+  </div>
+  <div>
+    <label for='name'>begin of name</label>
+    <input id='name' name='name'>
+  </div>
+  <div>
+    <label for='address'>begin of address name</label>
+    <input id='address' name='address'>
+  </div>
+  <input type='hidden' name='page' value='1'>
+  <div>
+    <label for='per_page'>per page</label>
+    <input id='per_page' name='per_page'>
+  </div>
+  <input type='submit' value='search'>
+</form>
+<table>
+  <thead>
+    <th>
+      <td>idcard</td>
+      <td>name</td>
+      <td>address</td>
+      <td>status</td>
+    </th>
+  </thead>
+  <tbody>
+    {% for item in pagination.items %}
+    <tr>
+      <td>{{ item.idcard }}</td>
+      <td>{{ item.name }}</td>
+      <td>{{ item.address.name }}</td>
+      <td>{{ item.status }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% from 'widgets.html' import render_pagination %}
+{% if pagination.has_next %}
+{{ render_pagination(pagination) }}
+{% endif %}
+{% endblock %}

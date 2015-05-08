@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}bankcard search{% endblock %}
+{% block content %}
+<form method='GET'>
+  <div>
+    <label for='no'>no of bankcard</label>
+    <input id='no' name='no'>
+  </div>
+  <div>
+    <label for='name'>begin of name</label>
+    <input id='name' name='name'>
+  </div>
+  <div>
+    <label for='idcard'>idcard of owner</label>
+    <input id='idcard' name='idcard'>
+  </div>
+  <input type='hidden' name='page' value='1'>
+  <div>
+    <label for='per_page'>per page</label>
+    <input id='per_page' name='per_page'>
+  </div>
+  <input type='submit' value='search'>
+</form>
+<table>
+  <thead>
+    <th>
+      <td>no</td>
+      <td>name</td>
+      <td>owner idcard</td>
+    </th>
+  </thead>
+  <tbody>
+    {% for item in pagination.items %}
+    <tr>
+      <td>{{ item.no }}</td>
+      <td>{{ item.name }}</td>
+      <td>{{ item.owner.idcard }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% from 'widgets.html' import render_pagination %}
+{% if pagination.has_next %}
+{{ render_pagination(pagination) }}
+{% endif %}
+{% endblock %}

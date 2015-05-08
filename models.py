@@ -776,9 +776,19 @@ class Note(db.Model):
     person_id = db.Column(db.Integer, db.ForeignKey('persons.id'))
     parent = db.relationship('Person', backref='notices')
     start_date = db.Column(db.Date, nullable=False)
-    end_date = db.Column(db.Date)
+    _end_date = db.Column(db.Date)
     content = db.Column(db.String, nullable=False)
     _effective = db.Column(db.Boolean, nullable=False, default=True)
+
+    @hybrid_property
+    def end_date(self):
+        return self._end_date
+
+    @end_date.setter
+    def end_date(self, val):
+        if val and val <= self.start_date:
+            raise DateError("end date can't earler than begin date")
+        self._end_date = val
 
     @hybrid_property
     def effective(self):
@@ -788,7 +798,7 @@ class Note(db.Model):
             self._effective
         )
 
-    @hybrid_property
+    @hybrid_method
     def disable(self):
         self._effective = False
 

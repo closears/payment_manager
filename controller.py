@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from sqlalchemy import exists, and_
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
@@ -51,8 +52,19 @@ class DateConverter(BaseConverter):
         return value.strftime('%Y-%m-%d') if isinstance(
             value, (datetime, date)) else value
 
+
+class NoneConverter(BaseConverter):
+
+    def to_python(self, value):
+        return None if value == 'None' else value
+
+    def to_url(self, value):
+        return str(value)
+
+
 app.url_map.converters['regex'] = RegexConverter
 app.url_map.converters['date'] = DateConverter
+app.url_map.converters['none'] = NoneConverter
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -718,6 +730,25 @@ def person_update(pk):
     return render_template('person_edit.html', form=form)
 
 
+@app.route('/person/search?idcardlike=<none:idcard>&namelike=<none:name>' +
+           'addresslike=<none:address>&page=<int:page>&perpage=<int:per_page>',
+           methods=['GET'])
+@login_required
+def person_search(idcard, name, address, page, per_page):
+    query = Person.query
+    if idcard:
+        query = query.filter(Person.idcard.like('{}%'.format(idcard)))
+    if name:
+        query = query.filter(Person.name.like('{}%'.format(name)))
+    if address:
+        stmt = exists().where(and_(
+            Person.address_id == Address.id,
+            Address.name.like('{}%'.format(address))))
+        query = query.filter(stmt)
+    return render_template('person_search.html',
+                           pagination=query.paginate(page, per_page))
+
+
 @app.route('/person/<int:pk>/standardbind', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ person.id }},{{ form.standard_id.data }}')
@@ -796,7 +827,8 @@ def bankcard_add():
 
 @app.route('/bankcard/<int:pk>/bind/', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ bankcard.id }},{{ bankcard.owner.idcard }}')
+@OperationLog.log_template('{{ bankcard.id }},{{ bankcard.owner.idcard }}' +
+                           '{% if person %}-old owner{% endif %}')
 def bankcard_bind(pk):
     bankcard = db.my_get_obj_or_404(Bankcard, Bankcard.id, pk)
     form = BankcardBindForm(request.form)
@@ -832,4 +864,27 @@ def bankcard_update(pk):
     return render_template('bankcard_edit.html', form=form)
 
 
-# TODO add bankcard delete
+@app.route('/bankcard/search?nolike=<no>&namelike=<name>' +
+           '&idcardlike=<none:idcard>&page=<int:page>&per_page=<int:per_page>',
+           methods=['GET'])
+@login_required
+def bankcard_search(no, name, idcard, page, per_page):
+    stmt = exists().where(and_(
+                          Bankcard.owner_id == Person.id,
+                          Person.address_id == Address.id,
+                          Address.id == current_user.address.id))
+    query = Bankcard.query.filter(stmt)
+    if no:
+        query = query.filter(Bankcard.no.like('{}%'.format(no)))
+    if name:
+        query = query.filter(Bankcard.name.like('{}%'.format(name)))
+    if idcard:
+        stmt = exists().where(and_(
+                              Bankcard.owner_id == Person.id,
+                              Person.idcard.like('{}%'.format(idcard))))
+        query = query.filter(stmt)
+    return render_template('bankcard_search.html',
+                           pagination=query.paginate(page, per_page))
+
+
+# TODO add notice add, finish, disable and search(get finished, unfinished)
