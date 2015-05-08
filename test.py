@@ -70,9 +70,9 @@ class TestBase(TestCase):
             user = User.query.filter(User.name == 'admin').one()
         except NoResultFound:
             user = User(name='admin', password='admin')
-            self.admin = user
-            db.session.add(user)
-            db.session.commit()
+        self.admin = user
+        db.session.add(user)
+        db.session.commit()
 
     def tearDown(self):
         db.session.remove()
@@ -391,28 +391,41 @@ class AdminTestCase(TestBase):
         self.assertFalse(admin.logs)
 
 
-class AddressTestCase(TestBase):
+class AddressDataMixin(object):
+    def __init__(self):
+        self.parent_addr = Address(no='420525', name='parent')
+
+        self.child1_addr = Address(no='42052511', name='child1')
+        self.child11_addr = Address(no='42052511001', name='child11')
+        self.child12_addr = Address(no='42052511002', name='child12')
+
+        self.child2_addr = Address(no='42052512', name='child2')
+        self.child21_addr = Address(no='42052512001', name='child21')
+        self.child22_addr = Address(no='42052512002', name='child22')
+        db.session.add_all([self.parent_addr, self.child1_addr,
+                            self.child11_addr, self.child12_addr,
+                            self.child2_addr, self.child21_addr,
+                            self.child22_addr])
+        db.session.commit()
+        self.parent_addr.childs.extend([self.child1_addr, self.child2_addr])
+        self.child1_addr.childs.extend([self.child11_addr, self.child12_addr])
+        self.child2_addr.childs.extend([self.child21_addr, self.child22_addr])
+        db.session.commit()
+
+
+class AddressTestCase(TestBase, AddressDataMixin):
     def setUp(self):
         super(AddressTestCase, self).setUp()
-        parent = Address(no='420525', name='parent')
-        child1 = Address(no='42052511', name='child1')
-        child11 = Address(no='42052511001', name='child11')
-        child12 = Address(no='42052511002', name='child12')
-        child1.childs.extend([child11, child12])
-        child2 = Address(no='42052512', name='child2')
-        child21 = Address(no='42052512001', name='child21')
-        child22 = Address(no='42052512002', name='child22')
-        child2.childs.extend([child21, child22])
-        db.session.add(parent)
-        parent.childs.extend([child1, child2])
-        admin = User.query.filter(User.name == 'admin').one()
-        admin.roles.append(Role(name='admin'))
-        admin.address = parent
+        AddressDataMixin.__init__(self)
+        role = Role(name='admin')
+        db.session.add(role)
+        db.session.commit()
+        self.admin.roles.append(role)
+        self.admin.address = self.parent_addr
         db.session.commit()
 
     def test(self):
-        admin = User.query.filter(User.name == 'admin').one()
-        self.assertEqual(2, len(admin.address.childs))
+        self.assertEqual(2, len(self.admin.address.childs))
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.assert_authorized()
         rv = self.client.get(url_for('address_add'))
@@ -421,7 +434,7 @@ class AddressTestCase(TestBase):
     def test_address_add(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.assert_authorized()
-        parent = Address.query.filter(Address.name == 'child1').one()
+        parent = self.child1_addr
         self.client.get(url_for('address_add'))
         self.client.post(url_for('address_add'), data=dict(
             no='42052511xxx',
@@ -477,26 +490,8 @@ class AddressTestCase(TestBase):
         self.assertIn('tbody', rv.data)
 
 
-class PersonTestCase(TestBase):
-
-    def setUp(self):
-        super(PersonTestCase, self).setUp()
-        parent = Address(no='420525', name='parent')
-        child1 = Address(no='42052511', name='child1')
-        child11 = Address(no='42052511001', name='child11')
-        child12 = Address(no='42052511002', name='child12')
-        child1.childs.extend([child11, child12])
-        child2 = Address(no='42052512', name='child2')
-        child21 = Address(no='42052512001', name='child21')
-        child22 = Address(no='42052512002', name='child22')
-        child2.childs.extend([child21, child22])
-        db.session.add(parent)
-        parent.childs.extend([child1, child2])
-        self.admin.roles.append(Role(name='admin'))
-        self.admin.address = parent
-        db.session.commit()
-
-    def __add_person(self, idcard, birthday, name, address_id):
+class PersonAddRemoveMixin(object):
+    def _add_person(self, idcard, birthday, name, address_id):
         from uuid import uuid4
         self.client.post(url_for('person_add'), data=dict(
             idcard=idcard,
@@ -507,8 +502,18 @@ class PersonTestCase(TestBase):
             securi_no=uuid4().hex,
             personal_wage='0.94'))
 
-    def __remove_person(self, pk):
+    def _remove_person(self, pk):
         self.client.post(url_for('person_delete', pk=pk))
+
+
+class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
+
+    def setUp(self):
+        super(PersonTestCase, self).setUp()
+        AddressDataMixin.__init__(self)
+        self.admin.roles.append(Role(name='admin'))
+        self.admin.address = self.parent_addr
+        db.session.commit()
 
     def test(self):
         person = Person()
@@ -534,31 +539,28 @@ class PersonTestCase(TestBase):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         rv = self.client.get(url_for('person_add'))
         self.assert_200(rv)
-        address = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person(
-            '420525195107010010', '1951-07-01', 'test', address.id)
+        self._add_person(
+            '420525195107010010', '1951-07-01', 'test', self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.assertIsNotNone(person)
-        db.session.delete(person)
-        db.session.commit()
+        self._remove_person(person.id)
 
     def test_person_delete(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.assert_authorized()
-        address = Address.query.filter(Address.name == 'parent').one()
         self.client.post(url_for('person_add'), data=dict(
             idcard='420525195107010010',
             birthday='1951-07-01',
             name='test',
-            address_id=address.id,
+            address_id=self.parent_addr.id,
             address_detail='xxxx',
             securi_no='123123',
             personal_wage='0.94'))
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.assertIsNotNone(person)
-        self.assertEqual(Person.STATUS_CHOICES[Person.REG][0], person.status)
+        self.assertTrue(person.can_normal)
         persons = Person.query.filter(Person.id == person.id).all()
         self.assertTrue(persons)
         rv = self.client.get(url_for('person_delete', pk=person.id))
@@ -570,35 +572,34 @@ class PersonTestCase(TestBase):
     def test_person_normal_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_normal_reg', pk=person.id))
         self.assertTrue(person.can_retire)
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_person_retire_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_normal_reg', pk=person.id))
         self.client.post(url_for('person_regire_reg', pk=person.id), data={
             'date': '2011-08-01'})
         self.assertEqual(date(2011, 8, 1), person.retire_day)
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_person_batch_normal(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        map(lambda x: self.__add_person(
+        map(lambda x: self._add_person(
             '4205251951070100{:0>2}'.format(x),
-            '1951-07-{:0>2}'.format(x), 'test{}'.format(x), addr.id),
-            range(10))
+            '1951-07-{:0>2}'.format(x), 'test{}'.format(x),
+            self.parent_addr.id), range(10))
         self.assertGreaterEqual(Person.query.filter(
             Person.idcard.like('420525195107%')).all(), 10)
         self.assertIn('420525195107',
@@ -608,7 +609,7 @@ class PersonTestCase(TestBase):
         for person in Person.query.filter(
                 Person.idcard.like('420525195107%')).all():
             self.assertTrue(person.can_retire)
-        map(lambda x: self.__remove_person(x),
+        map(lambda x: self._remove_person(x),
             [p.id for p in
              Person.query.filter(Person.idcard.like('420525195107%')).all()])
         self.assertNotIn('420525195107',
@@ -617,8 +618,8 @@ class PersonTestCase(TestBase):
     def test_person_dead_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.post(url_for('person_dead_reg', pk=person.id),
@@ -630,8 +631,9 @@ class PersonTestCase(TestBase):
         self.client.post(url_for('person_dead_reg', pk=person.id),
                          data=dict(date='2015-07-01'))
         self.assertEqual(person.dead_day, date(2015, 7, 1))
-        self.__remove_person(person.id)
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._remove_person(person.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_normal_reg', pk=person.id))
@@ -641,13 +643,13 @@ class PersonTestCase(TestBase):
         self.client.post(url_for('person_dead_reg', pk=person.id),
                          data=dict(date='2015-07-01'))
         self.assertEqual(person.dead_day, date(2015, 7, 1))
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_person_abort_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.post(url_for('person_abort_reg', pk=person.id))
@@ -658,13 +660,13 @@ class PersonTestCase(TestBase):
         self.assert200(rv)
         self.assertFalse(person.can_retire)
         self.assertFalse(person.can_normal)
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_person_suspend_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.post(url_for('person_suspend_reg', pk=person.id))
@@ -680,13 +682,13 @@ class PersonTestCase(TestBase):
         self.client.post(url_for('admin_user_remove_role', pk=self.admin.id),
                          data=dict(role=role.id))
         self.client.post(url_for('admin_role_remove', pk=role.id))
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_person_resume_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.post(url_for('person_resume_reg', pk=person.id))
@@ -702,13 +704,13 @@ class PersonTestCase(TestBase):
         self.client.post(url_for('admin_user_remove_role', pk=self.admin.id),
                          data=dict(role=role.id))
         self.client.post(url_for('admin_role_remove', pk=role.id))
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_person_update(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_update', pk=person.id), data=dict(
@@ -717,24 +719,23 @@ class PersonTestCase(TestBase):
             address_detail='no.1',
             securi_no='14124',
             personal_wage='11.94',
-            address_id=addr.id,
+            address_id=self.parent_addr.id,
             birthday='1951-07-02'))
         self.assertEqual('420525195107020011', person.idcard)
         self.assertEqual(date(1951, 7, 2), person.birthday)
         rv = self.client.get(url_for('person_update', pk=person.id))
         self.assertIn('1951-07-02', rv.data)
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_person_log_search(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
         for i in range(10):
-            self.__add_person(
+            self._add_person(
                 '4205251951070100{:0>2}'.format(i),
                 '1951-07-01',
                 'test',
-                addr.id)
+                self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard.like('4205251951070100%')).first()
         rv = self.client.get(url_for('person_log_search',
@@ -748,8 +749,12 @@ class PersonTestCase(TestBase):
         map(lambda p: db.session.delete(p), Person.query.filter(
             Person.idcard.like('4205251951070100%')).all())
         db.session.commit()
+        persons = Person.query.filter(
+            Person.idcard.like('4205251951070100%')).all()
+        self.assertFalse(persons)
         self.client.post(url_for('admin_log_clean', operator_id=self.admin.id))
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.parent_addr.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         for i in range(10):
@@ -760,7 +765,7 @@ class PersonTestCase(TestBase):
                                  address_detail='no.1',
                                  securi_no='14124',
                                  personal_wage='11.94',
-                                 address_id=addr.id,
+                                 address_id=self.parent_addr.id,
                                  birthday='1951-07-02'))
         rv = self.client.get(url_for('person_log_search',
                                      pk=person.id,
@@ -771,12 +776,12 @@ class PersonTestCase(TestBase):
                                      per_page=10))
         self.assertIn('person_update', rv.data)
         self.assertIn('person_add', rv.data)
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_person_search(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
-        self.__add_person('420525195107010010', '1951-07-01', 'test',
-                          self.admin.address.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.admin.address.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.get(url_for('person_search',
@@ -793,13 +798,13 @@ class PersonTestCase(TestBase):
                                      page=1,
                                      per_page=2))
         self.assertIn('test', rv.data)
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
     def test_standard_bind(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
-        addr = Address.query.filter(Address.name == 'parent').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test', addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.admin.address.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.get(url_for('standard_bind', pk=person.id))
@@ -830,7 +835,7 @@ class PersonTestCase(TestBase):
         db.session.commit()
         db.session.delete(standard)
         db.session.commit()
-        self.__remove_person(person.id)
+        self._remove_person(person.id)
 
 
 class StandardTestCase(TestBase):
@@ -855,31 +860,20 @@ class StandardTestCase(TestBase):
         db.session.commit()
 
 
-class BankcardTestCase(TestBase):
+class BankcardTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
     def setUp(self):
         super(BankcardTestCase, self).setUp()
+        PersonAddRemoveMixin.__init__(self)
+        AddressDataMixin.__init__(self)
         role = Role(name='admin')
         db.session.add(role)
         db.session.commit()
         self.admin.roles.append(role)
         db.session.commit()
-        addr = Address(no='6228410770613888888', name='test')
-        self.addr = addr
-        db.session.add(addr)
+        self.addr = self.parent_addr
         db.session.commit()
-        self.admin.address = addr
+        self.admin.address = self.addr
         db.session.commit()
-
-    def __add_person(self, idcard, birthday, name, address_id):
-        from uuid import uuid4
-        self.client.post(url_for('person_add'), data=dict(
-            idcard=idcard,
-            birthday=birthday,
-            name=name,
-            address_id=address_id,
-            address_detail='xxxx',
-            securi_no=uuid4().hex,
-            personal_wage='0.94'))
 
     def test_bankcard_add(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
@@ -901,8 +895,8 @@ class BankcardTestCase(TestBase):
             no='6228410770613888888', name='test'))
         bankcard = Bankcard.query.filter(
             Bankcard.no == '6228410770613888888').one()
-        self.__add_person('420525195107010010', '1951-07-01', 'test',
-                          self.addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.admin.address.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('bankcard_bind', pk=bankcard.id), data={
@@ -935,8 +929,8 @@ class BankcardTestCase(TestBase):
             'bankcard_search',
             no='622841', name='te', idcard='None', page=1, per_page=2))
         self.assertNotIn('test', rv.data)
-        self.__add_person('420525195107010010', '1951-07-01', 'test',
-                          self.addr.id)
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.admin.address.id)
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('bankcard_bind', pk=bankcard.id), data=dict(
@@ -952,6 +946,21 @@ class BankcardTestCase(TestBase):
         db.session.commit()
         db.session.delete(person)
         db.session.commit()
+
+
+class NoteTestCase(TestBase):
+
+    def test(self):
+        from forms import NoteForm
+        from models import Note
+        formdata = MultiDict([
+            ('person_id', None),
+            ('content', 'sdfsafasdf'),
+            ('start_date', '1951-07-01')])
+        form = NoteForm('', formdata=formdata)
+        self.assertTrue(form.validate())
+        note = Note()
+        form.populate_obj(note)
 
 
 def run_test():

@@ -774,7 +774,7 @@ class Note(db.Model):
     __tablename__ = 'notes'
     id = db.Column(db.Integer, primary_key=True)
     person_id = db.Column(db.Integer, db.ForeignKey('persons.id'))
-    parent = db.relationship('Person', backref='notices')
+    person = db.relationship('Person', backref='notes')
     start_date = db.Column(db.Date, nullable=False)
     _end_date = db.Column(db.Date)
     content = db.Column(db.String, nullable=False)

@@ -46,6 +46,20 @@ class DateConverter(BaseConverter):
         self.regex = r'\d{4}-\d{2}-\d{2}'
 
     def to_python(self, value):
+        d = datetime.strptime(value, '%Y-%m-%d')
+        return date(d.year, d.month, d.day)
+
+    def to_url(self, value):
+        return value.strftime('%Y-%m-%d') if isinstance(
+            value, (datetime, date)) else value
+
+
+class DateTimeConverter(BaseConverter):
+    def __init__(self, map, *args):
+        self.map = map
+        self.regex = r'\d{4}-\d{2}-\d{2}'
+
+    def to_python(self, value):
         return datetime.strptime(value, '%Y-%m-%d')
 
     def to_url(self, value):
@@ -64,6 +78,7 @@ class NoneConverter(BaseConverter):
 
 app.url_map.converters['regex'] = RegexConverter
 app.url_map.converters['date'] = DateConverter
+app.url_map.converters['datetime'] = DateTimeConverter
 app.url_map.converters['none'] = NoneConverter
 
 login_manager = LoginManager()
@@ -433,7 +448,7 @@ def admin_role_remove(pk):
 
 @app.route(
     '/admin/log/search?operator-id=<int:operator_id>' +
-    '&start_date=<date:start_date>&end_date=<date:end_date>' +
+    '&start_date=<datetime:start_date>&end_date=<datetime:end_date>' +
     '&page=<int:page>&per_page=<int:per_page>',
     methods=['GET']
 )
@@ -441,10 +456,8 @@ def admin_role_remove(pk):
 def admin_log_search(operator_id, start_date, end_date, page, per_page):
     pagination = OperationLog.query.filter(
         OperationLog.operator_id == operator_id).filter(
-            OperationLog.time >= datetime.strptime(start_date, '%Y-%m-%d')
-            ).filter(
-                OperationLog.time <= datetime.strptime(end_date, '%Y-%m-%d')
-            ).paginate(page, per_page)
+            OperationLog.time >= start_date).filter(
+                OperationLog.time <= end_date).paginate(page, per_page)
     return render_template('admin_log_search.html', pagination=pagination)
 
 
@@ -574,8 +587,8 @@ def person_delete(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        db.session.delete(person)
         OperationLog.log(db.session, current_user, person=person)
+        db.session.delete(person)
         db.session.commit()
         return 'success'
     return render_template('confirm.html', form=form, title='person delete',
@@ -886,5 +899,11 @@ def bankcard_search(no, name, idcard, page, per_page):
     return render_template('bankcard_search.html',
                            pagination=query.paginate(page, per_page))
 
+
+@app.route('/notice/add', methods=['GET', 'POST'])
+@person_admin_required
+@OperationLog.log_template('{{ person.id }}')
+def note_add():
+    pass
 
 # TODO add notice add, finish, disable and search(get finished, unfinished)

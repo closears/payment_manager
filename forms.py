@@ -1,11 +1,12 @@
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
 from wtforms import (
-    PasswordField, TextField, SelectField, DateField)
-from wtforms.validators import Required, EqualTo
+    PasswordField, TextField, SelectField, DateField, TextAreaField)
+from wtforms.validators import Required, EqualTo, Regexp
 from models import db
 from models import (
-    User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard)
+    User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard,
+    Note)
 
 
 BaseModelForm = model_form_factory(Form)
@@ -189,4 +190,21 @@ class BankcardForm(ModelForm):
 
 
 class BankcardBindForm(Form):
-    idcard = TextField('idcard', validators=[Required()])
+    idcard = TextField('idcard',
+                       validators=[Required(), Regexp(r'\d{17}[\d|X]')])
+
+
+class NoteForm(ModelForm):
+    person_id = SelectField('persons', coerce=lambda x: x and int(x))
+    content = TextAreaField('content', validators=[Required()])
+
+    def __init__(self, idcard, **kwargs):
+        super(NoteForm, self).__init__(**kwargs)
+        persons = Person.query.filter(
+            Person.idcard.like('{}%'.format(idcard))).all()
+        self.person_id.choices = map(lambda p: (p.id, p.idcard + p.name),
+                                     persons)
+        self.person_id.choices.append((None, ''))
+
+    class Meta:
+        model = Note
