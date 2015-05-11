@@ -14,17 +14,18 @@ from flask_principal import (
     identity_changed, Identity)
 from models import (
     app, db, User, Role, Address, Person, OperationLog, PersonStatusError,
-    PersonAgeError, Standard, Bankcard)
+    PersonAgeError, Standard, Bankcard, Note)
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
-    DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm)
+    DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm,
+    NoteForm)
 
 
 def __find_obj_or_404(cls, id_field, pk):
     try:
-        obj = cls.query.filter(id_field == pk).one()
+        obj = db.session.query(cls).filter(id_field == pk).one()
     except NoResultFound:
         flash(unicode('Object witt pk:{} was not find').format(pk))
         abort(404)
@@ -46,8 +47,8 @@ class DateConverter(BaseConverter):
         self.regex = r'\d{4}-\d{2}-\d{2}'
 
     def to_python(self, value):
-        d = datetime.strptime(value, '%Y-%m-%d')
-        return date(d.year, d.month, d.day)
+        return(value and date.fromordinal(
+            datetime.strptime(value, '%Y-%m-%d').toordinal()))
 
     def to_url(self, value):
         return value.strftime('%Y-%m-%d') if isinstance(
@@ -60,7 +61,7 @@ class DateTimeConverter(BaseConverter):
         self.regex = r'\d{4}-\d{2}-\d{2}'
 
     def to_python(self, value):
-        return datetime.strptime(value, '%Y-%m-%d')
+        return value and datetime.strptime(value, '%Y-%m-%d')
 
     def to_url(self, value):
         return value.strftime('%Y-%m-%d') if isinstance(
@@ -900,10 +901,35 @@ def bankcard_search(no, name, idcard, page, per_page):
                            pagination=query.paginate(page, per_page))
 
 
-@app.route('/notice/add', methods=['GET', 'POST'])
+@app.route('/note/add', methods=['GET', 'POST'])
+@login_required
+@OperationLog.log_template()
+def note_add():
+    form = NoteForm(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        note = Note()
+        form.populate_obj(note)
+        note.user = current_user
+        db.session.add(note)
+        db.session.commit()
+        return 'success'
+    return render_template('note_edit.html', form=form)
+
+
+@app.route('/note/forperson/<int:pk>', methods=['GET', 'POST'])
 @person_admin_required
 @OperationLog.log_template('{{ person.id }}')
-def note_add():
-    pass
+def note_add_to_person(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    form = NoteForm(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        note = Note()
+        form.populate_obj(note)
+        note.person = person
+        db.session.add(note)
+        db.session.commit()
+        return 'success'
+    return render_template('note_edit.html', form=form)
 
-# TODO add notice add, finish, disable and search(get finished, unfinished)
+
+# TODO add note add, finish, disable and search(get finished, unfinished)

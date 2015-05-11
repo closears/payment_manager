@@ -244,7 +244,7 @@ class Person(db.Model):
     address_detail = db.Column(db.String, nullable=False)
     securi_no = db.Column(db.String, nullable=False, unique=True)
     _personal_wage = db.Column(db.Float(precision=2), nullable=False,
-                              default=0.0)
+                               default=0.0)
     standard_wages = db.relationship(
         'Standard',
         secondary=PersonStandardAssoc.__tablename__,
@@ -779,6 +779,10 @@ class Note(db.Model):
     _end_date = db.Column(db.Date)
     content = db.Column(db.String, nullable=False)
     _effective = db.Column(db.Boolean, nullable=False, default=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    user = db.relationship('User', backref='notes')
+    create_time = db.Column(db.Date, default=datetime.datetime.now,
+                            nullable=False)
 
     @hybrid_property
     def end_date(self):
@@ -786,7 +790,7 @@ class Note(db.Model):
 
     @end_date.setter
     def end_date(self, val):
-        if val and val <= self.start_date:
+        if self.start_date and val and val <= self.start_date:
             raise DateError("end date can't earler than begin date")
         self._end_date = val
 

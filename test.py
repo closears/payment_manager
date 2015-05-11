@@ -1,14 +1,14 @@
 import os
-from datetime import date
+from datetime import date, datetime
 import tempfile
 import unittest
 from werkzeug import MultiDict
 from flask_testing import TestCase
 from flask import request, url_for
-from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
-from models import User, Role, Address, Person, Standard, Bankcard
+from models import User, Role, Address, Person, Standard, Bankcard, Note
 from forms import LoginForm, AdminAddRoleForm, PersonForm
 
 
@@ -33,6 +33,21 @@ class Utils(object):
     def is_authorized(cls, client):
         rv = client.get('/index.html')
         return rv.status_code == 200
+
+
+def _create_persons(idcard_prefix, count, address, create_by):
+    from uuid import uuid4
+    persons = [Person(
+        idcard='{}{:0>4}'.format(idcard_prefix[:14], x),
+        name='test',
+        birthday=date(1951, 7, 1),
+        address=address,
+        address_detail='xxx',
+        securi_no=uuid4().hex,
+        personal_wage=0.94,
+        create_by=create_by) for x in range(1, count + 1)]
+    map(lambda p: p.reg(), persons)
+    return persons
 
 
 class UserForm(ModelForm):
@@ -493,28 +508,42 @@ class AddressTestCase(TestBase, AddressDataMixin):
 class PersonAddRemoveMixin(object):
     def _add_person(self, idcard, birthday, name, address_id):
         from uuid import uuid4
-        self.client.post(url_for('person_add'), data=dict(
+        birthday = (isinstance(birthday, date) and birthday or
+                    date.fromordinal(
+                        datetime.strptime(birthday, '%Y-%m-%d').toordinal()))
+        person = Person(
             idcard=idcard,
             birthday=birthday,
             name=name,
             address_id=address_id,
             address_detail='xxxx',
             securi_no=uuid4().hex,
-            personal_wage='0.94'))
+            create_by=self.admin)
+        person.reg()
+        db.session.add(person)
+        db.session.commit()
 
     def _remove_person(self, pk):
-        self.client.post(url_for('person_delete', pk=pk))
+        try:
+            person = db.session.query(Person).filter(Person.id == pk).one()
+        except (NoResultFound, MultipleResultsFound):
+            pass
+        else:
+            db.session.delete(person)
+            db.session.commit()
 
 
-class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
+class PersonTestBase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
 
     def setUp(self):
-        super(PersonTestCase, self).setUp()
+        super(PersonTestBase, self).setUp()
         AddressDataMixin.__init__(self)
         self.admin.roles.append(Role(name='admin'))
         self.admin.address = self.parent_addr
         db.session.commit()
 
+
+class PersonTestCase(PersonTestBase):
     def test(self):
         person = Person()
         person.birthday = date(1951, 7, 1)
@@ -546,6 +575,23 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.assertIsNotNone(person)
         self._remove_person(person.id)
 
+        from uuid import uuid4
+        self.client.post(url_for('person_add'), data=dict(
+            idcard='420525195107010010',
+            name='test',
+            birthday='1951-07-01',
+            address_id=self.admin.address_id,
+            address_detail='xxxx',
+            securi_no=uuid4().hex,
+            personal_wage='0.94'))
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.assertIsNotNone(person)
+        self._remove_person(person.id)
+        person_count = Person.query.filter(
+            Person.idcard == '420525195107010010').count()
+        self.assertEqual(0, person_count)
+
     def test_person_delete(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.assert_authorized()
@@ -557,7 +603,7 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
             address_detail='xxxx',
             securi_no='123123',
             personal_wage='0.94'))
-        person = Person.query.filter(
+        person = db.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         self.assertIsNotNone(person)
         self.assertTrue(person.can_normal)
@@ -568,6 +614,9 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.client.post(url_for('person_delete', pk=person.id))
         persons = Person.query.filter(Person.id == person.id).all()
         self.assertFalse(persons)
+
+
+class PersonTestCase2(PersonTestBase):
 
     def test_person_normal_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
@@ -580,6 +629,8 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.assertTrue(person.can_retire)
         self._remove_person(person.id)
 
+
+class PersonTestCase3(PersonTestBase):
     def test_person_retire_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -593,15 +644,17 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.assertEqual(date(2011, 8, 1), person.retire_day)
         self._remove_person(person.id)
 
+
+class PersonTestCase4(PersonTestBase):
     def test_person_batch_normal(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
         map(lambda x: self._add_person(
             '4205251951070100{:0>2}'.format(x),
             '1951-07-{:0>2}'.format(x), 'test{}'.format(x),
-            self.parent_addr.id), range(10))
+            self.parent_addr.id), range(1, 10))
         self.assertGreaterEqual(Person.query.filter(
-            Person.idcard.like('420525195107%')).all(), 10)
+            Person.idcard.like('420525195107%')).all(), 9)
         self.assertIn('420525195107',
                       [p.idcard[:12] for p in Person.query.all()])
         self.client.post(url_for('person_batch_normal'), data=dict(
@@ -615,6 +668,8 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.assertNotIn('420525195107',
                          [p.idcard[:12] for p in Person.query.all()])
 
+
+class PersonTestCase5(PersonTestBase):
     def test_person_dead_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -645,6 +700,8 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.assertEqual(person.dead_day, date(2015, 7, 1))
         self._remove_person(person.id)
 
+
+class PersonTestCase6(PersonTestBase):
     def test_person_abort_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -662,6 +719,8 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.assertFalse(person.can_normal)
         self._remove_person(person.id)
 
+
+class PersonTestCase7(PersonTestBase):
     def test_person_suspend_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -684,6 +743,8 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.client.post(url_for('admin_role_remove', pk=role.id))
         self._remove_person(person.id)
 
+
+class PersonTestCase8(PersonTestBase):
     def test_person_resume_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -706,6 +767,8 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.client.post(url_for('admin_role_remove', pk=role.id))
         self._remove_person(person.id)
 
+
+class PersonTestCase9(PersonTestBase):
     def test_person_update(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -727,6 +790,8 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.assertIn('1951-07-02', rv.data)
         self._remove_person(person.id)
 
+
+class PersonTestCase10(PersonTestBase):
     def test_person_log_search(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -775,11 +840,13 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
                                      page=1,
                                      per_page=10))
         self.assertIn('person_update', rv.data)
-        self.assertIn('person_add', rv.data)
         self._remove_person(person.id)
 
+
+class PersonTestCase11(PersonTestBase):
     def test_person_search(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.admin.address.id)
         person = Person.query.filter(
@@ -800,6 +867,8 @@ class PersonTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.assertIn('test', rv.data)
         self._remove_person(person.id)
 
+
+class PersonTestCase12(PersonTestBase):
     def test_standard_bind(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -860,9 +929,9 @@ class StandardTestCase(TestBase):
         db.session.commit()
 
 
-class BankcardTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
+class BankcardTestBase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
     def setUp(self):
-        super(BankcardTestCase, self).setUp()
+        super(BankcardTestBase, self).setUp()
         PersonAddRemoveMixin.__init__(self)
         AddressDataMixin.__init__(self)
         role = Role(name='admin')
@@ -875,6 +944,8 @@ class BankcardTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         self.admin.address = self.addr
         db.session.commit()
 
+
+class BankcardTestCase(BankcardTestBase):
     def test_bankcard_add(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         rv = self.client.get(url_for('bankcard_add'))
@@ -889,6 +960,8 @@ class BankcardTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         db.session.delete(bankcard)
         db.session.commit()
 
+
+class BankcardTestCase2(BankcardTestBase):
     def test_bankcard_bind(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.post(url_for('bankcard_add'), data=dict(
@@ -907,6 +980,8 @@ class BankcardTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         db.session.delete(person)
         db.session.commit()
 
+
+class BankcardTestCase3(BankcardTestBase):
     def test_bankcard_update(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.post(url_for('bankcard_add'), data=dict(
@@ -948,19 +1023,83 @@ class BankcardTestCase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
         db.session.commit()
 
 
-class NoteTestCase(TestBase):
+class NoteTestCase(TestBase, AddressDataMixin):
+    def setUp(self):
+        super(NoteTestCase, self).setUp()
+        AddressDataMixin.__init__(self)
+        role = Role(name='admin')
+        role2 = Role(name='person_admin')
+        db.session.add_all([role, role2])
+        db.session.commit()
+        self.admin.roles.extend([role, role2])
+        db.session.commit()
 
     def test(self):
         from forms import NoteForm
         from models import Note
         formdata = MultiDict([
-            ('person_id', None),
             ('content', 'sdfsafasdf'),
-            ('start_date', '1951-07-01')])
-        form = NoteForm('', formdata=formdata)
+            ('start_date', '1951-07-01'),
+            ('end_date', '1951-08-01')])
+        form = NoteForm(formdata=formdata)
         self.assertTrue(form.validate())
         note = Note()
         form.populate_obj(note)
+        self.assertEqual(date(1951, 7, 1), note.start_date)
+        self.assertEqual(date(1951, 8, 1), note.end_date)
+        formdata = MultiDict([
+            ('content', 'sdfsafasdf'),
+            ('start_date', '1951-07-01')])
+        form = NoteForm(formdata=formdata)
+        form.populate_obj(note)
+        self.assertTrue(form.validate())
+        self.assertEqual(date(1951, 7, 1), note.start_date)
+        self.assertIsNone(note.end_date)
+
+    def test_note_add(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post('/')
+        map(db.session.delete, Note.query.all())
+        self.client.get(url_for('note_add'))
+        self.client.post(url_for('note_add'), data=dict(
+            content='xxxyyy',
+            start_date='2011-07-01'))
+        note = Note.query.filter(Note.content == 'xxxyyy').one()
+        self.assertIsNotNone(note)
+        self.assertEqual(note.start_date, date(2011, 7, 1))
+        db.session.delete(note)
+        db.session.delete(note)
+        self.client.post(url_for('note_add'), data=dict(
+            content='xxxyyy',
+            start_date='2011-07-01',
+            end_date='2011-08-01'))
+        note = Note.query.filter(Note.content == 'xxxyyy').one()
+        self.assertEqual(date(2011, 8, 1), note.end_date)
+        db.session.delete(note)
+        db.session.commit()
+
+    def test_note_add_for_person(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        map(db.session.delete, Person.query.all())
+        db.session.commit()
+        db.session.add_all(_create_persons(
+            '42052519510701', 1, self.parent_addr, self.admin))
+        db.session.commit()
+        person = Person.query.filter(
+            Person.idcard == '420525195107010001').one()
+        rv = self.client.get(url_for('note_add_to_person', pk=person.id))
+        self.assert200(rv)
+        rv = self.client.post(url_for('note_add_to_person', pk=person.id),
+                              data=dict(
+                                  content='xxxyyy',
+                                  start_date='2011-07-01',
+                                  end_date='2011-08-01'))
+        self.assert200(rv)
+        self.assertEqual('xxxyyy', person.notes[0].content)
+        map(db.session.delete, Person.query.filter(
+            Person.idcard.like('42052519510701%')).all())
+        db.session.commit()
 
 
 def run_test():
