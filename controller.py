@@ -47,8 +47,7 @@ class DateConverter(BaseConverter):
         self.regex = r'\d{4}-\d{2}-\d{2}'
 
     def to_python(self, value):
-        return(value and date.fromordinal(
-            datetime.strptime(value, '%Y-%m-%d').toordinal()))
+        return value and datetime.strptime(value, '%Y-%m-%d').date()
 
     def to_url(self, value):
         return value.strftime('%Y-%m-%d') if isinstance(
@@ -77,10 +76,23 @@ class NoneConverter(BaseConverter):
         return str(value)
 
 
+class BooleanConverter(BaseConverter):
+    def __init__(self, map, *args):
+        self.map = map
+        self.regex == 'yes|no'
+
+    def to_python(self, value):
+        return value == 'yes'
+
+    def to_url(self, value):
+        return value and 'yes' or 'no'
+
+
 app.url_map.converters['regex'] = RegexConverter
 app.url_map.converters['date'] = DateConverter
 app.url_map.converters['datetime'] = DateTimeConverter
 app.url_map.converters['none'] = NoneConverter
+app.url_map.converters['boolean'] = BooleanConverter
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -476,11 +488,11 @@ def admin_log_clean(operator_id):
     if request.method == 'POST' and form.validate_on_submit():
         query = OperationLog.query.filter(OperationLog.id == operator_id)
         if form.start_date.data:
-            start_date = datetime.fromordinal(form.start_date.data.toordinal())
-            query = query.filter(OperationLog.time >= start_date)
+            start_time = datetime.fromordinal(form.start_date.data.toordinal())
+            query = query.filter(OperationLog.time >= start_time)
         if form.end_date.data:
-            end_date = datetime.fromordinal(form.end_date.data.toordinal())
-            query = query.filter(OperationLog.time <= end_date)
+            end_time = datetime.fromordinal(form.end_date.data.toordinal())
+            query = query.filter(OperationLog.time <= end_time)
         query.delete()
         db.session.commit()
         return 'success'
@@ -927,9 +939,62 @@ def note_add_to_person(pk):
         form.populate_obj(note)
         note.person = person
         db.session.add(note)
+        OperationLog.log(db.session, current_user, person=person)
         db.session.commit()
         return 'success'
     return render_template('note_edit.html', form=form)
 
 
-# TODO add note add, finish, disable and search(get finished, unfinished)
+@app.route('/note/finish/<int:pk>', methods=['GET', 'POST'])
+@login_required
+@OperationLog.log_template()
+def note_finish(pk):
+    note = db.my_get_obj_or_404(Note, Note.id, pk)
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        note.finish()
+        db.session.commit()
+        return 'success'
+    return render_template('confirm.html', form=form, title='note_finish')
+
+
+@app.route('/note/disable/<int:pk>', methods=['GET', 'POST'])
+@login_required
+@OperationLog.log_template()
+def note_disable(pk):
+    note = db.my_get_obj_or_404(Note, Note.id, pk)
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        note.disable()
+        db.session.commit()
+        return 'success'
+    return render_template('confirm.html', form=form, title='note_finish')
+
+
+@app.route('/note/clean', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template()
+def note_clean():
+    form = DateForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        Note.query.filter(Note.start_date <= form.date.data).filter(
+            Note.effective.is_(True)).delete()
+        db.session.commit()
+        return 'success'
+    return render_template('date.html', form=form,
+                           title='clean before {}'.format(form.date.data))
+
+
+@app.route('/note/list/finished/<boolean:finished>?' +
+           'page=<int:page>&per_page=<int:per_page>',
+           methods=['GET'])
+@login_required
+def note_search(finished, page, per_page):
+    query = Note.query.filter(Note.user_id == current_user.id).filter(
+        Note.effective.is_(True)).filter(
+            Note.finished == finished)
+    return render_template('note_search.html', pagination=query.paginate(
+        page, per_page))
+
+
+# TODO search(get finished, unfinished)

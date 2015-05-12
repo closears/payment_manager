@@ -1,6 +1,7 @@
 # coding=utf-8
 import re
 import datetime
+from datetime import timedelta
 import calendar
 from hashlib import md5
 from dateutil.relativedelta import relativedelta
@@ -790,25 +791,49 @@ class Note(db.Model):
 
     @end_date.setter
     def end_date(self, val):
+        if not (self._effective is None or self._effective):
+            raise ValueError('The note is discarded')
         if self.start_date and val and val <= self.start_date:
             raise DateError("end date can't earler than begin date")
         self._end_date = val
 
     @hybrid_property
     def effective(self):
-        return and_(
-            self.end_date.isnot(None),
-            self.start_date <= datetime.datetime.now(),
-            self._effective
-        )
+        return self._effective and\
+            self.start_date <= datetime.datetime.now().date() and\
+            (self.end_date is None or
+             self.end_date >= datetime.datetime.now().date())
+
+    @effective.expression
+    def effective(cls):
+        return and_(cls._effective.is_(True),
+                    cls.start_date <= datetime.datetime.now().date(),
+                    or_(cls.end_date.is_(None),
+                        cls.end_date >= datetime.datetime.now().date()))
 
     @hybrid_method
     def disable(self):
+        if self.finished:
+            raise ValueError('The note already finished')
         self._effective = False
+        return self._effective
 
     @hybrid_method
     def finish(self):
-        self.end_date = datetime.datetime.now()
+        if not self.effective:
+            raise ValueError('The note is discarded')
+        self.end_date = datetime.datetime.now().date() + timedelta(days=1)
+        return self.end_date
+
+    @hybrid_property
+    def finished(self):
+        return self._end_date and\
+            self._end_date <= datetime.datetime.now().date()
+
+    @finished.expression
+    def finished(cls):
+        return and_(cls._end_date.isnot(None),
+                    cls._end_date <= datetime.datetime.now().date)
 
 
 def test():

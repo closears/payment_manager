@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import tempfile
 import unittest
 from werkzeug import MultiDict
@@ -100,6 +100,31 @@ class TestBase(TestCase):
     def assert_not_authorized(self):
         rv = self.client.get('/index.html')
         self.assert_status(rv, 302)
+
+    @property
+    def today(self):
+        return datetime.now().date()
+
+    @property
+    def today_str(self):
+        return datetime.strftime(self.today, '%Y-%m-%d')
+
+    @property
+    def tomorrow(self):
+        return (datetime.now() + timedelta(days=1)).date()
+
+    @property
+    def tomorrow_str(self):
+        return datetime.strftime(self.tomorrow, '%Y-%m-%d')
+
+    def _days_tomorrow(self, day):
+        day += timedelta(days=1)
+        if isinstance(day, datetime):
+            day = day.date()
+        return day
+
+    def _days_tomorrow_str(self, day):
+        return datetime.strftime(self._days_tomorrow(day), '%Y-%m-%d')
 
 
 class UserTestCase(TestBase):
@@ -1024,6 +1049,7 @@ class BankcardTestCase3(BankcardTestBase):
 
 
 class NoteTestCase(TestBase, AddressDataMixin):
+
     def setUp(self):
         super(NoteTestCase, self).setUp()
         AddressDataMixin.__init__(self)
@@ -1039,21 +1065,21 @@ class NoteTestCase(TestBase, AddressDataMixin):
         from models import Note
         formdata = MultiDict([
             ('content', 'sdfsafasdf'),
-            ('start_date', '1951-07-01'),
-            ('end_date', '1951-08-01')])
+            ('start_date', self.tomorrow_str),
+            ('end_date', self._days_tomorrow_str(self.tomorrow))])
         form = NoteForm(formdata=formdata)
         self.assertTrue(form.validate())
         note = Note()
         form.populate_obj(note)
-        self.assertEqual(date(1951, 7, 1), note.start_date)
-        self.assertEqual(date(1951, 8, 1), note.end_date)
+        self.assertEqual(self.tomorrow, note.start_date)
+        self.assertEqual(self._days_tomorrow(self.tomorrow), note.end_date)
         formdata = MultiDict([
             ('content', 'sdfsafasdf'),
-            ('start_date', '1951-07-01')])
+            ('start_date', self.tomorrow_str)])
         form = NoteForm(formdata=formdata)
         form.populate_obj(note)
         self.assertTrue(form.validate())
-        self.assertEqual(date(1951, 7, 1), note.start_date)
+        self.assertEqual(self.tomorrow, note.start_date)
         self.assertIsNone(note.end_date)
 
     def test_note_add(self):
@@ -1063,22 +1089,23 @@ class NoteTestCase(TestBase, AddressDataMixin):
         self.client.get(url_for('note_add'))
         self.client.post(url_for('note_add'), data=dict(
             content='xxxyyy',
-            start_date='2011-07-01'))
+            start_date=self.tomorrow_str))
         note = Note.query.filter(Note.content == 'xxxyyy').one()
         self.assertIsNotNone(note)
-        self.assertEqual(note.start_date, date(2011, 7, 1))
+        self.assertEqual(note.start_date, self.tomorrow)
         db.session.delete(note)
         db.session.delete(note)
         self.client.post(url_for('note_add'), data=dict(
             content='xxxyyy',
-            start_date='2011-07-01',
-            end_date='2011-08-01'))
+            start_date=self.tomorrow_str,
+            end_date=self._days_tomorrow_str(self.tomorrow)))
         note = Note.query.filter(Note.content == 'xxxyyy').one()
-        self.assertEqual(date(2011, 8, 1), note.end_date)
+        self.assertFalse(note.effective)
+        self.assertEqual(self._days_tomorrow(self.tomorrow), note.end_date)
         db.session.delete(note)
         db.session.commit()
 
-    def test_note_add_for_person(self):
+    def test_note_add_to_person(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
         map(db.session.delete, Person.query.all())
@@ -1093,13 +1120,84 @@ class NoteTestCase(TestBase, AddressDataMixin):
         rv = self.client.post(url_for('note_add_to_person', pk=person.id),
                               data=dict(
                                   content='xxxyyy',
-                                  start_date='2011-07-01',
-                                  end_date='2011-08-01'))
+                                  start_date=self.today_str,
+                                  end_date=self._days_tomorrow_str(
+                                      self.tomorrow)))
+        rv = self.client.get(url_for('admin_log_search',
+                                     operator_id=self.admin.id,
+                                     start_date=self.today_str,
+                                     end_date=self.tomorrow_str,
+                                     page='1',
+                                     per_page='19'))
+        self.assertIn('note_add_to_person', rv.data)
         self.assert200(rv)
         self.assertEqual('xxxyyy', person.notes[0].content)
+        Note.query.delete()
+        db.session.commit()
         map(db.session.delete, Person.query.filter(
             Person.idcard.like('42052519510701%')).all())
         db.session.commit()
+
+    def test_note_finish(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('note_add'), data=dict(
+            content='xxxyyy',
+            start_date=self.today_str,
+            end_date=self.tomorrow_str))
+        note = Note.query.filter(Note.content == 'xxxyyy').one()
+        self.assertFalse(note.finished)
+        rv = self.client.get(url_for('note_finish', pk=10000))
+        self.assert404(rv)
+        rv = self.client.post(url_for('note_finish', pk=100000))
+        self.assert404(rv)
+        rv = self.client.get(url_for('note_finish', pk=note.id))
+        self.assert200(rv)
+        self.client.post(url_for('note_finish', pk=note.id))
+        self.assertTrue(note.finished)
+        self.assertEqual(note.end_date, datetime.now().date())
+        db.session.delete(note)
+        db.session.commit()
+
+    def test_note_disable(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('note_add'), data=dict(
+            content='xxxyyy',
+            start_date='2011-07-01',
+            end_date=self.tomorrow_str))
+        note = Note.query.filter(Note.content == 'xxxyyy').one()
+        self.assertTrue(note.effective)
+        self.assertFalse(note.finished)
+        rv = self.client.get(url_for('note_disable', pk=10000))
+        self.assert404(rv)
+        rv = self.client.post(url_for('note_disable', pk=100000))
+        self.assert404(rv)
+        rv = self.client.get(url_for('note_disable', pk=note.id))
+        self.assert200(rv)
+        self.client.post(url_for('note_disable', pk=note.id))
+        self.assertFalse(note.effective)
+        self.assertFalse(note.finished)
+        db.session.delete(note)
+        db.session.commit()
+
+    def test_note_clean(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('note_add'), data=dict(
+            content='xxxyyy',
+            start_date='2011-07-01'))
+        notes = Note.query.filter(Note.content == 'xxxyyy').all()
+        self.assertTrue(notes)
+        rv = self.client.post(url_for('note_clean'), data=dict(
+            date='2013-01-01'))
+        self.assert200(rv)
+        notes = Note.query.filter(Note.content == 'xxxyyy').all()
+        self.assertFalse(notes)
+
+    def test_note_search(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('note_add'), data=dict(
+            content='xxxyyy',
+            start_date='2011-07-01',
+            end_date='2011-08-01'))
 
 
 def run_test():
