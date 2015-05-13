@@ -100,6 +100,14 @@ class TestBase(TestCase):
     def assert_not_authorized(self):
         rv = self.client.get('/index.html')
         self.assert_status(rv, 302)
+        
+    @property
+    def yestoday(self):
+        return datetime.now().date() + timedelta(days=-1)
+
+    @property
+    def yestoday_str(self):
+        return datetime.strftime(self.yestoday, '%Y-%m-%d')
 
     @property
     def today(self):
@@ -1143,7 +1151,7 @@ class NoteTestCase(TestBase, AddressDataMixin):
         self.client.post(url_for('note_add'), data=dict(
             content='xxxyyy',
             start_date=self.today_str,
-            end_date=self.tomorrow_str))
+            end_date=self._days_tomorrow_str(self.tomorrow)))
         note = Note.query.filter(Note.content == 'xxxyyy').one()
         self.assertFalse(note.finished)
         rv = self.client.get(url_for('note_finish', pk=10000))
@@ -1154,7 +1162,7 @@ class NoteTestCase(TestBase, AddressDataMixin):
         self.assert200(rv)
         self.client.post(url_for('note_finish', pk=note.id))
         self.assertTrue(note.finished)
-        self.assertEqual(note.end_date, datetime.now().date())
+        self.assertEqual(note.end_date, self.tomorrow)
         db.session.delete(note)
         db.session.commit()
 
@@ -1162,8 +1170,8 @@ class NoteTestCase(TestBase, AddressDataMixin):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.post(url_for('note_add'), data=dict(
             content='xxxyyy',
-            start_date='2011-07-01',
-            end_date=self.tomorrow_str))
+            start_date=self.today_str,
+            end_date=self._days_tomorrow_str(self.tomorrow)))
         note = Note.query.filter(Note.content == 'xxxyyy').one()
         self.assertTrue(note.effective)
         self.assertFalse(note.finished)
@@ -1183,11 +1191,11 @@ class NoteTestCase(TestBase, AddressDataMixin):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.post(url_for('note_add'), data=dict(
             content='xxxyyy',
-            start_date='2011-07-01'))
+            start_date=self.yestoday_str))
         notes = Note.query.filter(Note.content == 'xxxyyy').all()
         self.assertTrue(notes)
         rv = self.client.post(url_for('note_clean'), data=dict(
-            date='2013-01-01'))
+            date=self.today_str))
         self.assert200(rv)
         notes = Note.query.filter(Note.content == 'xxxyyy').all()
         self.assertFalse(notes)
@@ -1196,8 +1204,11 @@ class NoteTestCase(TestBase, AddressDataMixin):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.post(url_for('note_add'), data=dict(
             content='xxxyyy',
-            start_date='2011-07-01',
-            end_date='2011-08-01'))
+            start_date=self.yestoday,
+            end_date=self.tomorrow_str))
+        rv = self.client.get(url_for('note_search', finished=True, page=1,
+                                     per_page=10))
+        self.assertIn('xxxyyy', rv.data)
 
 
 def run_test():

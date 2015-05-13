@@ -828,12 +828,13 @@ class Note(db.Model):
     @hybrid_property
     def finished(self):
         return self._end_date and\
-            self._end_date <= datetime.datetime.now().date()
+            self._end_date < datetime.datetime.now().date() + timedelta(days=2)
 
     @finished.expression
     def finished(cls):
         return and_(cls._end_date.isnot(None),
-                    cls._end_date <= datetime.datetime.now().date)
+                    cls._end_date < datetime.datetime.now().date +
+                    timedelta(days=2))
 
 
 def test():
