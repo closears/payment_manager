@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}person search{% endblock %}
+{% block content %}
+<form method='GET'>
+  <div>
+    <label for='finished'>is finished</label>
+    <input type='checkbox' id='finished' name='finished'>
+  </div>
+  <input type='hidden' name='page' value='1'>
+  <div>
+    <label for='per_page'>per page</label>
+    <input id='per_page' name='per_page'>
+  </div>
+  <input type='submit' value='search'>
+</form>
+<table>
+  <thead>
+    <th>
+      <td>person</td>
+      <td>content</td>
+      <td>start date</td>
+      <td>end date</td>
+      <td>effective</td>
+    </th>
+  </thead>
+  <tbody>
+    {% for item in pagination.items %}
+    <tr>
+      <td>{{ item.person }}</td>
+      <td>{{ item.content }}</td>
+      <td>{{ item.start_date }}</td>
+      <td>{{ item.end_date }}</td>
+      <td>{{ item.effective }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% from 'widgets.html' import render_pagination %}
+{% if pagination.has_next %}
+{{ render_pagination(pagination) }}
+{% endif %}
+{% endblock %}

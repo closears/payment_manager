@@ -239,7 +239,7 @@ def login():
 def logout():
     OperationLog.log(db.session, current_user)
     logout_user()
-    return redirect('/login')
+    return redirect(url_for('login'))
 
 
 @app.route('/user/changepassword', methods=['GET', 'POST'])
@@ -942,7 +942,8 @@ def note_add_to_person(pk):
         OperationLog.log(db.session, current_user, person=person)
         db.session.commit()
         return 'success'
-    return render_template('note_edit.html', form=form)
+    return render_template('note_edit.html', form=form,
+                           title='note add')
 
 
 @app.route('/note/finish/<int:pk>', methods=['GET', 'POST'])
@@ -997,4 +998,20 @@ def note_search(finished, page, per_page):
         page, per_page))
 
 
-# TODO search(get finished, unfinished)
+@app.route('/note/touser/<int:user_id>', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ user_id }}')
+def note_to_urer(user_id):
+    user = db.my_get_obj_or_404(User, User.id, user_id)
+    form = NoteForm(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        note = Note()
+        form.populate_obj(note)
+        note.user = user
+        db.session.commit()
+        return 'success'
+    return render_template('note_edit.html', form=form,
+                           title='notice to person')
+
+
+# TODO

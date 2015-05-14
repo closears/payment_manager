@@ -1209,6 +1209,44 @@ class NoteTestCase(TestBase, AddressDataMixin):
         rv = self.client.get(url_for('note_search', finished=True, page=1,
                                      per_page=10))
         self.assertIn('xxxyyy', rv.data)
+        rv = self.client.get(url_for('note_search', finished=False, page=1,
+                                     per_page=10))
+        self.assertNotIn('xxxyyy', rv.data)
+        self.client.post(url_for('note_add'), data=dict(
+            content='yyyzzz',
+            start_date=self.yestoday,
+            end_date=self._days_tomorrow_str(self.tomorrow)))
+        rv = self.client.get(url_for('note_search', finished=True, page=1,
+                                     per_page=10))
+        self.assertNotIn('yyyzzz', rv.data)
+        rv = self.client.get(url_for('note_search', finished=False, page=1,
+                                     per_page=10))
+        self.assertIn('yyyzzz', rv.data)
+        Note.query.delete()
+        db.session.commit()
+
+    def test_note_to_user(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        self.client.post(url_for('admin_add_user'), data=dict(
+            name='test', password='test'))
+        user = User.query.filter(User.name == 'test').one()
+        self.assertEqual(User(name='test', password='test'), user)
+        self.assertEqual(User(name='test', password='test'), user)
+        self.client.post(url_for('note_to_urer', user_id=user.id), data=dict(
+            content='xxxyyy',
+            start_date=self.yestoday,
+            end_date=self._days_tomorrow_str(self.tomorrow)))
+        rv = self.client.get(url_for('note_search', finished=False, page=1,
+                                     per_page=10))
+        self.assertNotIn('xxxyyy', rv.data)
+        note = Note.query.filter(Note.content == 'xxxyyy').one()
+        self.assertEqual(self.yestoday, note.start_date)
+        self.assertEqual(note.user, user)
+        Note.query.delete()
+        db.session.commit()
+        db.session.delete(user)
+        db.session.commit()
 
 
 def run_test():

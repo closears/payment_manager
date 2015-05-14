@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}not add{% endblock %}
+{% block title %}{{ title }}{% endblock %}
 {% block content %}
 <form method='POST'>
   {{ form.hidden_tag() }}
@@ -17,5 +17,4 @@
   </div>
   <input type='submit' value='submit'>
 </form>
-{{ xxxx }}
 {% endblock %}

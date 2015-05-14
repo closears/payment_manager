@@ -833,7 +833,7 @@ class Note(db.Model):
     @finished.expression
     def finished(cls):
         return and_(cls._end_date.isnot(None),
-                    cls._end_date < datetime.datetime.now().date +
+                    cls._end_date < datetime.datetime.now().date() +
                     timedelta(days=2))
 
 
