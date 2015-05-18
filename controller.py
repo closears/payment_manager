@@ -14,13 +14,13 @@ from flask_principal import (
     identity_changed, Identity)
 from models import (
     app, db, User, Role, Address, Person, OperationLog, PersonStatusError,
-    PersonAgeError, Standard, Bankcard, Note)
+    PersonAgeError, Standard, Bankcard, Note, PayBookItem)
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
     DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm,
-    NoteForm)
+    NoteForm, PayItemForm)
 
 
 def __find_obj_or_404(cls, id_field, pk):
@@ -102,6 +102,7 @@ CsrfProtect(app)
 Principal(app)
 admin_required = Permission(RoleNeed('admin')).require(403)
 person_admin_required = Permission(RoleNeed('person_admin')).require(403)
+pay_admin_required = Permission(RoleNeed('pay_admin')).require(403)
 
 
 @login_manager.user_loader
@@ -1014,4 +1015,21 @@ def note_to_urer(user_id):
                            title='notice to person')
 
 
-# TODO
+@app.route('/payitem/add', methods=['GET', 'POST'])
+@pay_admin_required
+@OperationLog.log_template()
+def payitem_add():
+    form = PayItemForm(formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        item = PayBookItem()
+        form.populate_obj(item)
+        db.session.add(item)
+        db.session.commit()
+        return 'success'
+    return render_template('payitem_edit.html', form=form,
+                           title='payitem add')
+
+
+# TODO add pay book import, pay book search, pay book amend, pay book forward
+# pay book export, pay book batch forward, remove payitem default item to
+# controller

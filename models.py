@@ -680,9 +680,10 @@ class PayBook(db.Model):
         return self
 
     @classmethod
-    def remend_tuple(cls, person, item1, item2, bankcard, money, peroid, user):
+    def remend_tuple(cls, person, item1, item2, bankcard1,
+                     bankcard2, money, peroid, user):
 
-        def _remend(item, money):
+        def _remend(item, bankcard, money):
             return PayBook(
                 person=person,
                 bankcard=bankcard,
@@ -691,8 +692,9 @@ class PayBook(db.Model):
                 peroid=peroid,
                 create_by=user
             )
-        return (_remend(_item, _money)
-                for _item, _money in ((item1, -money), (item2, money)))
+        return (_remend(_item, _bankcard, _money)
+                for _item, _bankcard, _money in
+                ((item1, bankcard1, -money), (item2, bankcard2, money)))
 
     def forward_tuple(self, forward_item, bankcard, user):
 

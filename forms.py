@@ -6,7 +6,7 @@ from wtforms.validators import Required, EqualTo, Regexp
 from models import db
 from models import (
     User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard,
-    Note)
+    Note, PayBookItem)
 
 
 BaseModelForm = model_form_factory(Form)
@@ -201,3 +201,20 @@ class NoteForm(ModelForm):
     class Meta:
         model = Note
         only = ['start_date']
+
+
+class PayItemForm(ModelForm):
+    parent_id = SelectField('parent', validators=[Required()],
+                            coerce=lambda x: x and int(x))
+
+    def __init__(self, *args, **kwargs):
+        super(PayItemForm, self).__init__(*args, **kwargs)
+        query = PayBookItem.query
+        obj = kwargs.get('obj', None)
+        if obj:
+            query = query.filter(PayBookItem.id != obj.id)
+        self.parent_id.choices = map(lambda a: (a.id, a.name), query.all())
+        self.parent_id.choices.append((None, ''))
+
+    class Meta:
+        model = PayBookItem
