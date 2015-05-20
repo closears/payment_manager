@@ -204,8 +204,7 @@ class NoteForm(ModelForm):
 
 
 class PayItemForm(ModelForm):
-    parent_id = SelectField('parent', validators=[Required()],
-                            coerce=lambda x: x and int(x))
+    parent_id = SelectField('parent', coerce=lambda x: x and int(x))
 
     def __init__(self, *args, **kwargs):
         super(PayItemForm, self).__init__(*args, **kwargs)

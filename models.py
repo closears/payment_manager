@@ -526,11 +526,6 @@ class PayBookItem(db.Model):
     parent = db.relationship(
         'PayBookItem', backref='childs', remote_side=[id])
 
-    DEFAULT_ITEMS = (
-        PAY, INTER_BANK, BANK, OUGHT_PAY, INCOME, SYS, REMEND, INTER_BANK_FAIL,
-        BANK_FAIL) = ('pay', 'internet bank', 'bank', 'ought recive', 'income',
-                      'sys', 'remend', 'internet bank fail', 'bank fail')
-
     def __repr__(self):
         return "<PayBookItem(name='{name}',parent={parent})>".format(
             name=self.name,
@@ -637,47 +632,17 @@ class PayBook(db.Model):
         if isinstance(val, (datetime.datetime,)):
             self._peroid = datetime.datetime(val.year, val.month, 1)
         else:
-            self._peroid = datetime.datetime.strptime(val, '%Y%m')
+            self._peroid = datetime.datetime.strptime(val, '%Y%m').date()
 
     @hybrid_method
     def in_peroid(self, peroid):
         if isinstance(peroid, str):
-            peroid = datetime.datetime.strptime(peroid, '%Y%m')
+            peroid = datetime.datetime.strptime(peroid, '%Y%m').date()
         year, month = peroid.year, peroid.month
-        first_date = datetime.datetime(year, month, 1)
-        last_date = datetime.datetime(year, month, calendar.monthrange(
-            self._peroid.year, self._peroid.month)[1])
+        first_date = datetime.date(year, month, 1)
+        last_date = datetime.date(year, month, calendar.monthrange(
+            year, month)[1])
         return first_date <= self.peroid <= last_date
-
-    def create_from_report_text(self, text, peroid=None):
-        '''
-        00000000|xxx|42272519510701001X|60|42052511001|6213360770888888888|
-'''
-        regex = re.compile(r'^(\d+)\|(.*?)\|(\d{17}[\dX])\|(\d+(?:\.\d+)?)' +
-                           r'\|(.*?)\|(\d*)(?:.*?)\|\s+$')
-        result = regex.match(text)
-        if result is None:
-            raise FormatError()
-        IDCARDNO, MONEY, BANKCARDNO = 3, 4, 6
-        idcard_no = result.group(IDCARDNO)
-        bankcard_no = result.group(BANKCARDNO)
-        try:
-            bankcard = db.session.query(Bankcard).filter(no=bankcard_no).one()
-        except NoResultFound:
-            bankcard = None
-        try:
-            person = db.session.query(Person).filter(idcard=idcard_no).one()
-            item = db.session.query(
-                PayBookItem).filter(name=PayBookItem.SYS).one()
-        except NoResultFound as e:
-            app.logger.info(e)
-            raise e
-        self.bankcard = bankcard
-        self.person = person
-        self.item = item
-        self.money = float(result.group(MONEY))
-        self.peroid = peroid if peroid else datetime.datetime.now()
-        return self
 
     @classmethod
     def remend_tuple(cls, person, item1, item2, bankcard1,

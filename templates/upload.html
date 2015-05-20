@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}upload file{% endblock %}
+{% block content %}
+<form method='POST' enctype='multipart/form-data'>
+  {{ form.hidden_tag() }}
+  <input type='file' name='file'>
+  <input type='submit' value='upload'>
+</form>
+{% endblock %}

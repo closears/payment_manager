@@ -947,11 +947,21 @@ def note_add_to_person(pk):
                            title='note add')
 
 
+def _get_note_or_404(pk):
+    try:
+        note = Note.query.filter(Note.id == pk).filter(
+            Note.user_id == current_user.id).one()
+    except NoResultFound:
+        flash('note not find')
+        abort(404)
+    return note
+
+
 @app.route('/note/finish/<int:pk>', methods=['GET', 'POST'])
 @login_required
 @OperationLog.log_template()
 def note_finish(pk):
-    note = db.my_get_obj_or_404(Note, Note.id, pk)
+    note = _get_note_or_404(pk)
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         note.finish()
@@ -964,7 +974,7 @@ def note_finish(pk):
 @login_required
 @OperationLog.log_template()
 def note_disable(pk):
-    note = db.my_get_obj_or_404(Note, Note.id, pk)
+    note = _get_note_or_404(pk)
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         note.disable()
@@ -1017,7 +1027,7 @@ def note_to_urer(user_id):
 
 @app.route('/payitem/add', methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template()
+@OperationLog.log_template('{{ item.id }}')
 def payitem_add():
     form = PayItemForm(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1025,11 +1035,33 @@ def payitem_add():
         form.populate_obj(item)
         db.session.add(item)
         db.session.commit()
+        OperationLog.log(db.session, current_user, item=item)
         return 'success'
     return render_template('payitem_edit.html', form=form,
                            title='payitem add')
 
 
+@app.route('/payitem/<int:pk>/detail', methods=['GET'])
+@pay_admin_required
+def pay_item_detail(pk):
+    item = db.my_get_obj_or_404(PayBookItem, PayBookItem.id, pk)
+    return render_template('pay_item_detail.html', item=item)
+
+
+@app.route('/paybook/import', methods=['GET', 'POST'])
+@pay_admin_required
+def paybook_import():
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        file = request.files.get('file')
+        print(file)
+    return render_template('upload.html', form=form)
 # TODO add pay book import, pay book search, pay book amend, pay book forward
 # pay book export, pay book batch forward, remove payitem default item to
 # controller
+
+
+'''Response(generator,
+                       mimetype="text/plain",
+                       headers={"Content-Disposition":
+                                    "attachment;filename=test.txt"})'''

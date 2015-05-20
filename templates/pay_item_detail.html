@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}paybook item detail{% endblock %}
+{% block content %}
+<ul>
+  <li>{{ item.name }}</li>
+  {% if item.childs %}
+  <ul>
+    {% for i in item.childs recursive %}
+    <li>{{ i.name }}
+      {% if i.childs %}
+      <ul>{{ loop(i.childs) }}</ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</ul>
+{% endblock %}

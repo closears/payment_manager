@@ -8,7 +8,8 @@ from flask import request, url_for
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
-from models import User, Role, Address, Person, Standard, Bankcard, Note
+from models import (User, Role, Address, Person, Standard, Bankcard, Note,
+                    PayBookItem)
 from forms import LoginForm, AdminAddRoleForm, PersonForm
 
 
@@ -1246,6 +1247,47 @@ class NoteTestCase(TestBase, AddressDataMixin):
         Note.query.delete()
         db.session.commit()
         db.session.delete(user)
+        db.session.commit()
+
+
+class PayItemTestCase(TestBase):
+    def setUp(self):
+        super(PayItemTestCase, self).setUp()
+        role = Role(name='pay_admin')
+        db.session.add(role)
+        db.session.commit()
+        self.admin.roles.append(role)
+        db.session.commit()
+
+    def test_payitem_add(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.get(url_for('payitem_add'))
+        self.assertIn('parent_id', rv.data)
+        self.client.post(url_for('payitem_add'), data=dict(
+            name='sys',
+            direct=1))
+        item = PayBookItem.query.filter(PayBookItem.name == 'sys').one()
+        self.assertEqual(1, item.direct)
+        db.session.delete(item)
+        db.session.commit()
+
+    def test_payitem_detail(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('payitem_add'), data=dict(
+            name='sys', direct=1))
+        self.client.get('/')
+        item = db.session.query(PayBookItem).filter(
+            PayBookItem.name == 'sys').one()
+        rv = self.client.get(url_for('pay_item_detail', pk=item.id))
+        self.assertIn('sys', rv.data)
+        self.client.post(url_for('payitem_add'), data=dict(
+            name='child', direct=1, parent_id=item.id))
+        rv = self.client.get(url_for('pay_item_detail', pk=item.id))
+        self.assertIn('child', rv.data)
+        db.session.query(PayBookItem).filter(
+            PayBookItem.name == 'child').delete()
+        db.session.commit()
+        db.session.delete(item)
         db.session.commit()
 
 
