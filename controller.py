@@ -1,3 +1,7 @@
+import csv
+import codecs
+import re
+from collections import namedtuple
 from datetime import datetime, date
 from sqlalchemy import exists, and_
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
@@ -14,7 +18,7 @@ from flask_principal import (
     identity_changed, Identity)
 from models import (
     app, db, User, Role, Address, Person, OperationLog, PersonStatusError,
-    PersonAgeError, Standard, Bankcard, Note, PayBookItem)
+    PersonAgeError, Standard, Bankcard, Note, PayBookItem, PayBook)
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
@@ -1048,13 +1052,55 @@ def pay_item_detail(pk):
     return render_template('pay_item_detail.html', item=item)
 
 
-@app.route('/paybook/import', methods=['GET', 'POST'])
+@app.route('/paybook/import/<date:peroid>', methods=['GET', 'POST'])
 @pay_admin_required
-def paybook_import():
+def paybook_import(peroid):
+    '''20006453|陈光福|422725194412230018|60|42052511001|6213360770377286914|
+ '''
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        file = request.files.get('file')
-        print(file)
+        file = request.files['file']
+        Reader = namedtuple('Reader',
+                            'securi_no,name,idcard,money,village_no,bankcard')
+        line_no = 1
+
+        def validate(record):
+            if not re.match(r'^(?:(?:\d{19})|(?:\d{2}-\d{15}))[\w\W]*$',
+                            record.bankcard):
+                return False
+            if not re.match(r'^\d{17}[\d|X]$', record.idcard):
+                return False
+            if not re.match(r'^\d+(?:\.\d{2})?$', record.money):
+                return False
+            return True
+        for fields in csv.reader(file):
+            fields = map(lambda x: x.replace(codecs.BOM_UTF8, ''), fields)
+            fields = map(lambda x: codecs.decode(x, 'utf-8'), fields)
+            record = Reader._make(fields)
+            if not validate(record):
+                flash('Syntx error in line:{}'.format(line_no))
+                abort(500)
+            item1 = PayBookItem.query.filter(
+                PayBookItem.name == 'sys_should_pay').one()
+            item2 = PayBookItem.query.filter(
+                PayBookItem.name == 'bank_should_pay').one()
+            try:
+                bankcard_no = re.match(r'^((?:\d{19})|(?:\d{2}-\d{15}))' +
+                                       '[\w\W]*$', record.bankcard).group(1)
+                bankcard = Bankcard.query.filter(
+                    Bankcard.no == bankcard_no).one()
+                person = Person.query.filter(
+                    Person.idcard == record.idcard).one()
+            except NoResultFound:
+                flash('Bankcard or person not find. In line:{}'.format(
+                    line_no))
+                abort(500)
+            db.session.add_all(PayBook.create_tuple(
+                person, item1, item2, bankcard, bankcard, float(record.money),
+                peroid, current_user))
+            line_no += 1
+        db.session.commit()
+        return 'success'
     return render_template('upload.html', form=form)
 # TODO add pay book import, pay book search, pay book amend, pay book forward
 # pay book export, pay book batch forward, remove payitem default item to

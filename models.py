@@ -1,5 +1,5 @@
 # coding=utf-8
-import re
+
 import datetime
 from datetime import timedelta
 import calendar
@@ -10,7 +10,6 @@ from jinja2 import Template
 from sqlalchemy import or_, and_, false
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm.exc import NoResultFound
 
 app = Flask(__name__)
 db = SQLAlchemy(app)
@@ -645,10 +644,10 @@ class PayBook(db.Model):
         return first_date <= self.peroid <= last_date
 
     @classmethod
-    def remend_tuple(cls, person, item1, item2, bankcard1,
+    def create_tuple(cls, person, item1, item2, bankcard1,
                      bankcard2, money, peroid, user):
 
-        def _remend(item, bankcard, money):
+        def _create(item, bankcard, money):
             return PayBook(
                 person=person,
                 bankcard=bankcard,
@@ -657,25 +656,14 @@ class PayBook(db.Model):
                 peroid=peroid,
                 create_by=user
             )
-        return (_remend(_item, _bankcard, _money)
+        return (_create(_item, _bankcard, _money)
                 for _item, _bankcard, _money in
                 ((item1, bankcard1, -money), (item2, bankcard2, money)))
 
     def forward_tuple(self, forward_item, bankcard, user):
-
-        def record(item, bankcard, money):
-            return PayBook(
-                person=self.person,
-                peroid=self.peroid,
-                bankcard=bankcard,
-                item=item,
-                create_by=user,
-                money=money
-            )
-        return (record(_item, _bankcard, _money)
-                for _item, _bankcard, _money in(
-                    (self.item, self.bankcard, -self.money),
-                    (forward_item, bankcard, self.money)))
+        return self.create_tuple(self.person, self.item, forward_item,
+                                 self.bankcard, bankcard, self.money,
+                                 self.peroid, user)
 
 
 class OperationLog(db.Model):
