@@ -6,7 +6,7 @@ from wtforms.validators import Required, EqualTo, Regexp
 from models import db
 from models import (
     User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard,
-    Note, PayBookItem)
+    Note, PayBookItem, PayBook)
 
 
 BaseModelForm = model_form_factory(Form)
@@ -217,3 +217,34 @@ class PayItemForm(ModelForm):
 
     class Meta:
         model = PayBookItem
+
+
+class AmendForm(ModelForm):
+    money = TextField('money', validators=[Regexp(r'^-?\d+(?:\.\d{2})?$')])
+    bankcard = TextField('bankcard', validators=[Regexp(
+        r'^(?:\d{19})|(?:\d{2}-\d{15})$')])
+
+    def __init__(self, **kwargs):
+        super(AmendForm, self).__init__(**kwargs)
+        self.paybook = kwargs['obj']
+        self.user = kwargs['user']
+
+    def populate_obj(self, lst):
+        sys_should = PayBookItem.query.filter(
+            PayBookItem.name == 'sys_should_pay').one()
+        sys_amend = PayBookItem.query.filter(
+            PayBookItem.name == 'sys_amend').one()
+        bank_should = PayBookItem.query.filter(
+            PayBookItem.name == 'bank_should_pay').one()
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == self.bankcard.data).one()
+        lst.extend(
+            PayBook.create_tuple(self.paybook.person, sys_amend, sys_should,
+                                 bankcard, self.paybook.bankcard,
+                                 float(self.money.data),
+                                 self.paybook.peroid, self.user))
+        lst.extend(
+            PayBook.create_tuple(self.paybook.person, sys_should, bank_should,
+                                 self.paybook.bankcard, bankcard,
+                                 float(self.money.data),
+                                 self.paybook.peroid, self.user))

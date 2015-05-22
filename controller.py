@@ -24,7 +24,7 @@ from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
     DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm,
-    NoteForm, PayItemForm)
+    NoteForm, PayItemForm, AmendForm)
 
 
 def __find_obj_or_404(cls, id_field, pk):
@@ -1054,6 +1054,7 @@ def pay_item_detail(pk):
 
 @app.route('/paybook/upload/<date:peroid>', methods=['GET', 'POST'])
 @pay_admin_required
+@OperationLog.log_template()
 def paybook_upload(peroid):
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1102,12 +1103,27 @@ def paybook_upload(peroid):
                 person, item1, item2, bankcard, bankcard, float(record.money),
                 peroid, current_user))
             line_no += 1
+        OperationLog.log(db.session, current_user)
         db.session.commit()
         return 'success'
     return render_template('upload.html', form=form)
-# TODO add pay book search, pay book amend, pay book forward
-# pay book export, pay book batch forward, remove payitem default item to
-# controller
+
+
+@app.route('/paybook/<int:pk>/amend', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ pay_book.id }},{{ pay_book.person.idcard }}')
+def paybook_amend(pk):
+    paybook = db.my_get_obj_or_404(PayBook, PayBook.id, pk)
+    form = AmendForm(obj=paybook, user=current_user, formdata=request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        lst = []
+        form.populate_obj(lst)
+        db.session.add_all(lst)
+        db.session.commit()
+        return 'success'
+    return render_template('paybook_amend.html', form=form)
+# TODO add pay book search, pay book amend, bank success reg,
+# pay book export, bank batch success reg, bank fail reg,
 
 
 '''Response(generator,

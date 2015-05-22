@@ -1298,7 +1298,9 @@ class PayBookTestCase(TestBase, AddressDataMixin):
         AddressDataMixin.__init__(self)
         db.session.add_all([
             PayBookItem(name='sys_should_pay', direct=1),
-            PayBookItem(name='bank_should_pay', direct=1)])
+            PayBookItem(name='sys_amend', direct=1),
+            PayBookItem(name='bank_should_pay', direct=1),
+            PayBookItem(name='bank_payed', direct=1)])
         db.session.commit()
         roles = [Role(name=name) for name in
                  ('person_admin', 'pay_admin', 'admin')]
