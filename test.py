@@ -1,5 +1,7 @@
 import os
+import io
 from datetime import date, datetime, timedelta
+from uuid import uuid4
 import tempfile
 import unittest
 from werkzeug import MultiDict
@@ -9,7 +11,7 @@ from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
 from models import (User, Role, Address, Person, Standard, Bankcard, Note,
-                    PayBookItem)
+                    PayBookItem, PayBook)
 from forms import LoginForm, AdminAddRoleForm, PersonForm
 
 
@@ -101,7 +103,7 @@ class TestBase(TestCase):
     def assert_not_authorized(self):
         rv = self.client.get('/index.html')
         self.assert_status(rv, 302)
-        
+
     @property
     def yestoday(self):
         return datetime.now().date() + timedelta(days=-1)
@@ -609,7 +611,6 @@ class PersonTestCase(PersonTestBase):
         self.assertIsNotNone(person)
         self._remove_person(person.id)
 
-        from uuid import uuid4
         self.client.post(url_for('person_add'), data=dict(
             idcard='420525195107010010',
             name='test',
@@ -1288,6 +1289,76 @@ class PayItemTestCase(TestBase):
             PayBookItem.name == 'child').delete()
         db.session.commit()
         db.session.delete(item)
+        db.session.commit()
+
+
+class PayBookTestCase(TestBase, AddressDataMixin):
+    def setUp(self):
+        super(PayBookTestCase, self).setUp()
+        AddressDataMixin.__init__(self)
+        db.session.add_all([
+            PayBookItem(name='sys_should_pay', direct=1),
+            PayBookItem(name='bank_should_pay', direct=1)])
+        db.session.commit()
+        roles = [Role(name=name) for name in
+                 ('person_admin', 'pay_admin', 'admin')]
+        db.session.add_all(roles)
+        db.session.commit()
+        self.admin.roles.extend(roles)
+        self.admin.address = self.parent_addr
+        db.session.commit()
+
+    def test_paybook_upload(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        rv = self.client.post(url_for('person_add'), data=dict(
+            idcard='420525195107010010',
+            name='test',
+            birthday='1951-07-01',
+            address_id=self.parent_addr.id,
+            address_detail='xxxx',
+            securi_no=uuid4().hex,
+            personal_wage='0.94'))
+        self.assert200(rv)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(url_for('bankcard_add'), data=dict(
+            name='test', no='6228410770613888888'))
+        csvstr = r'xx|test|420525195107010010|60|xx|6228410770613888888'
+        rv = self.client.post(url_for('paybook_upload',
+                                      peroid=date(2011, 8, 1)),
+                              data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
+        self.assert500(rv)
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard.id),
+                         data=dict(idcard='420525195107010010'))
+        rv = self.client.post(url_for('paybook_upload',
+                                      peroid=date(2011, 8, 1)),
+                              data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
+        self.assertEqual(2, len(person.paybooks))
+        PayBook.query.delete()
+        db.session.commit()
+        self.client.post(url_for('person_add'), data=dict(
+            idcard='420525195107010011',
+            name='test',
+            birthday='1951-07-01',
+            address_id=self.parent_addr.id,
+            address_detail='xxxx',
+            securi_no=uuid4().hex,
+            personal_wage='0.94'))
+        csvstr += '\nxx|test|420525195107010011|60|xx|6228410770613888888'
+        person2 = Person.query.filter(
+            Person.idcard == '420525195107010011').one()
+        rv = self.client.post(url_for('paybook_upload',
+                                      peroid=date(2011, 8, 1)),
+                              data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
+        self.assertEqual(2, len(person2.paybooks))
+        self.assertEqual(2, len(person.paybooks))
+        PayBook.query.delete()
+        db.session.commit()
+        Bankcard.query.delete()
+        db.session.commit()
+        Person.query.delete(synchronize_session=False)
         db.session.commit()
 
 

@@ -515,6 +515,14 @@ class Bankcard(db.Model):
             no=self.no,
             name=self.name))
 
+    @hybrid_property
+    def binded(self):
+        return self.owner is not None
+
+    @binded.expression
+    def binded(cls):
+        return cls.owner.isnot(None)
+
 
 class PayBookItem(db.Model):
     __tablename__ = 'paybookitems'
@@ -532,7 +540,7 @@ class PayBookItem(db.Model):
         )
 
     def __str__(self):
-        return unicode('{name'.format(name=self.name))
+        return unicode('{name}'.format(name=self.name))
 
     @property
     def descendants(self):
@@ -629,9 +637,11 @@ class PayBook(db.Model):
     def peroid(self, val):
         '''val's format is %Y%m, for example:201503'''
         if isinstance(val, (datetime.datetime,)):
-            self._peroid = datetime.datetime(val.year, val.month, 1)
-        else:
+            self._peroid = datetime.date(val.year, val.month, 1)
+        elif isinstance(val, (str,)):
             self._peroid = datetime.datetime.strptime(val, '%Y%m').date()
+        else:
+            self._peroid = val
 
     @hybrid_method
     def in_peroid(self, peroid):

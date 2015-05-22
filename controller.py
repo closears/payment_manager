@@ -1052,11 +1052,9 @@ def pay_item_detail(pk):
     return render_template('pay_item_detail.html', item=item)
 
 
-@app.route('/paybook/import/<date:peroid>', methods=['GET', 'POST'])
+@app.route('/paybook/upload/<date:peroid>', methods=['GET', 'POST'])
 @pay_admin_required
-def paybook_import(peroid):
-    '''20006453|陈光福|422725194412230018|60|42052511001|6213360770377286914|
- '''
+def paybook_upload(peroid):
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         file = request.files['file']
@@ -1073,9 +1071,11 @@ def paybook_import(peroid):
             if not re.match(r'^\d+(?:\.\d{2})?$', record.money):
                 return False
             return True
-        for fields in csv.reader(file):
-            fields = map(lambda x: x.replace(codecs.BOM_UTF8, ''), fields)
-            fields = map(lambda x: codecs.decode(x, 'utf-8'), fields)
+        for line in file:
+            line = line.replace(codecs.BOM_UTF8, '').replace('|', ',').rstrip(
+                ',')
+            fields = map(lambda x: codecs.decode(x, 'utf-8'),
+                         csv.reader([line]).next())
             record = Reader._make(fields)
             if not validate(record):
                 flash('Syntx error in line:{}'.format(line_no))
@@ -1095,6 +1095,9 @@ def paybook_import(peroid):
                 flash('Bankcard or person not find. In line:{}'.format(
                     line_no))
                 abort(500)
+            if not bankcard.binded:
+                flash("unbind bankcard can't pay")
+                abort(500)
             db.session.add_all(PayBook.create_tuple(
                 person, item1, item2, bankcard, bankcard, float(record.money),
                 peroid, current_user))
@@ -1102,7 +1105,7 @@ def paybook_import(peroid):
         db.session.commit()
         return 'success'
     return render_template('upload.html', form=form)
-# TODO add pay book import, pay book search, pay book amend, pay book forward
+# TODO add pay book search, pay book amend, pay book forward
 # pay book export, pay book batch forward, remove payitem default item to
 # controller
 
