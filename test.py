@@ -1296,11 +1296,19 @@ class PayBookTestCase(TestBase, AddressDataMixin):
     def setUp(self):
         super(PayBookTestCase, self).setUp()
         AddressDataMixin.__init__(self)
-        db.session.add_all([
+        sys, sys_amend, sys_should = (
+            PayBookItem(name='sys', direct=1),
             PayBookItem(name='sys_should_pay', direct=1),
-            PayBookItem(name='sys_amend', direct=1),
+            PayBookItem(name='sys_amend', direct=1))
+        bank, bank_should, bank_payed = (
+            PayBookItem(name='bank', direct=1),
             PayBookItem(name='bank_should_pay', direct=1),
-            PayBookItem(name='bank_payed', direct=1)])
+            PayBookItem(name='bank_payed', direct=1))
+        db.session.add_all(
+            [sys, sys_amend, sys_should, bank, bank_should, bank_payed])
+        db.session.commit()
+        sys.childs.extend([sys_amend, sys_should])
+        bank.childs.extend([bank_should, bank_payed])
         db.session.commit()
         roles = [Role(name=name) for name in
                  ('person_admin', 'pay_admin', 'admin')]
@@ -1356,11 +1364,84 @@ class PayBookTestCase(TestBase, AddressDataMixin):
                               data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
         self.assertEqual(2, len(person2.paybooks))
         self.assertEqual(2, len(person.paybooks))
+        self.assertEqual(1, len(filter(
+            lambda e: e.item.name == 'bank_should_pay', person2.paybooks)))
+        self.assertEqual(
+            60.0,
+            sum(map(lambda e: e.money,
+                    filter(
+                        lambda e: e.item.name == 'bank_should_pay',
+                        person2.paybooks))))
         PayBook.query.delete()
         db.session.commit()
         Bankcard.query.delete()
         db.session.commit()
         Person.query.delete(synchronize_session=False)
+        db.session.commit()
+
+    def test_paybook_amend(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('person_add'), data=dict(
+            idcard='420525195107010010',
+            name='test',
+            birthday='1951-07-01',
+            address_id=self.parent_addr.id,
+            address_detail='xxxx',
+            securi_no=uuid4().hex,
+            personal_wage='0.94'))
+        self.client.post(url_for('bankcard_add'), data=dict(
+            name='test', no='6228410770613888888'))
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard.id),
+                         data=dict(idcard='420525195107010010'))
+        csvstr = r'xx|test|420525195107010010|60|xx|6228410770613888888'
+        self.client.post(url_for('paybook_upload',
+                                 peroid=date(2011, 8, 1)),
+                         data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
+        bank_books = filter(lambda e: e.item.name == 'bank_should_pay',
+                            bankcard.paybooks)
+        self.assertEqual(60.0, sum(map(lambda book: book.money, bank_books)))
+        sys_book = filter(lambda e: e.item.name == 'sys_should_pay',
+                          bankcard.paybooks)[0]
+        self.client.post(url_for('bankcard_add'), data=dict(
+            name='test2', no='6228410770613666666'))
+        bankcard2 = Bankcard.query.filter(
+            Bankcard.no == '6228410770613666666').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard2.id),
+                         data=dict(idcard='420525195107010010'))
+        rv = self.client.post(url_for('paybook_amend', pk=sys_book.id),
+                              data=dict(
+                                  bankcard='6228410770613666666',
+                                  money='75.00'))
+        self.assert200(rv)
+        sys_books1 = filter(lambda e: e.item.name == 'sys_should_pay',
+                            bankcard.paybooks)
+        bank_books1 = filter(lambda e: e.item.name == 'bank_should_pay',
+                             bankcard.paybooks)
+        self.assertEqual(0.00, sum(map(lambda b: b.money, sys_books1)))
+        self.assertEqual(0.00, sum(map(lambda b: b.money, bank_books1)))
+        sys_books2 = filter(lambda e: e.item.name == 'sys_should_pay',
+                            bankcard2.paybooks)
+        bank_books2 = filter(lambda e: e.item.name == 'bank_should_pay',
+                             bankcard2.paybooks)
+        self.assertEqual(0.00, sum(map(lambda b: b.money, bankcard2.paybooks)))
+        self.assertEqual(0.00, sum(map(lambda b: b.money, sys_books2)))
+        self.assertEqual(75.00, sum(map(lambda b: b.money, bank_books2)))
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.assertEqual(0.00, sum(map(lambda e: e.money, person.paybooks)))
+        person_sys_books = filter(lambda e: e.item.name == 'sys_should_pay',
+                                  person.paybooks)
+        self.assertEqual(0.00, sum(map(lambda e: e.money, person_sys_books)))
+        person_bank_books = filter(lambda e: e.item.name == 'bank_should_pay',
+                                   person.paybooks)
+        self.assertEqual(75.00, sum(map(lambda e: e.money, person_bank_books)))
+        PayBook.query.delete()
+        db.session.commit()
+        Bankcard.query.delete()
+        db.session.commit()
+        db.session.query(Person).delete()
         db.session.commit()
 
 

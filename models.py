@@ -7,7 +7,7 @@ from hashlib import md5
 from dateutil.relativedelta import relativedelta
 from flask import Flask
 from jinja2 import Template
-from sqlalchemy import or_, and_, false
+from sqlalchemy import or_, and_, false, exists
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from flask_sqlalchemy import SQLAlchemy
 
@@ -643,15 +643,35 @@ class PayBook(db.Model):
         else:
             self._peroid = val
 
-    @hybrid_method
-    def in_peroid(self, peroid):
+    @classmethod
+    def _date_range(cls, peroid):
         if isinstance(peroid, str):
             peroid = datetime.datetime.strptime(peroid, '%Y%m').date()
         year, month = peroid.year, peroid.month
         first_date = datetime.date(year, month, 1)
         last_date = datetime.date(year, month, calendar.monthrange(
             year, month)[1])
-        return first_date <= self.peroid <= last_date
+        return first_date, last_date
+
+    @hybrid_method
+    def in_peroid(self, peroid):
+        m_range = self._date_range(peroid)
+        return m_range[0] <= self.peroid <= m_range[1]
+
+    @in_peroid.expression
+    def in_peroid(cls, peroid):
+        m_range = cls._date_range(peroid)
+        return and_(cls.peroid >= m_range[0], cls.peroid <= m_range[1])
+
+    @hybrid_method
+    def item_is(self, item_name):
+        return self.item.name == item_name
+
+    @item_is.expression
+    def item_is(cls, item_name):
+        return exists().where(and_(
+            PayBook.item_id == PayBookItem.id,
+            PayBookItem.name == item_name))
 
     @classmethod
     def create_tuple(cls, person, item1, item2, bankcard1,

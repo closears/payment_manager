@@ -1,8 +1,9 @@
+from datetime import datetime
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
 from wtforms import (
     PasswordField, TextField, SelectField, DateField, TextAreaField)
-from wtforms.validators import Required, EqualTo, Regexp
+from wtforms.validators import Required, EqualTo, Regexp, ValidationError
 from models import db
 from models import (
     User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard,
@@ -220,14 +221,21 @@ class PayItemForm(ModelForm):
 
 
 class AmendForm(ModelForm):
-    money = TextField('money', validators=[Regexp(r'^-?\d+(?:\.\d{2})?$')])
     bankcard = TextField('bankcard', validators=[Regexp(
         r'^(?:\d{19})|(?:\d{2}-\d{15})$')])
+    money = TextField('money', validators=[Regexp(r'^-?\d+(?:\.\d{2})?$')])
 
     def __init__(self, **kwargs):
         super(AmendForm, self).__init__(**kwargs)
         self.paybook = kwargs['obj']
         self.user = kwargs['user']
+
+    def validate_on_submit(self):
+        if self.paybook.item.name != 'sys_should_pay':
+            return False
+        if not self.paybook.bankcard.binded:
+            return False
+        return super(AmendForm, self).validate_on_submit()
 
     def populate_obj(self, lst):
         sys_should = PayBookItem.query.filter(
@@ -239,12 +247,11 @@ class AmendForm(ModelForm):
         bankcard = Bankcard.query.filter(
             Bankcard.no == self.bankcard.data).one()
         lst.extend(
-            PayBook.create_tuple(self.paybook.person, sys_amend, sys_should,
-                                 bankcard, self.paybook.bankcard,
-                                 float(self.money.data),
-                                 self.paybook.peroid, self.user))
+            PayBook.create_tuple(self.paybook.person, sys_amend, bank_should,
+                                 bankcard, bankcard, float(self.money.data),
+                                 datetime.now().date(), self.user))
         lst.extend(
             PayBook.create_tuple(self.paybook.person, sys_should, bank_should,
-                                 self.paybook.bankcard, bankcard,
-                                 float(self.money.data),
-                                 self.paybook.peroid, self.user))
+                                 self.paybook.bankcard, self.paybook.bankcard,
+                                 self.paybook.money, datetime.now().date(),
+                                 self.user))
