@@ -597,6 +597,7 @@ class PayBook(db.Model):
     create_user_id = db.Column(
         db.Integer, db.ForeignKey('users.id'), nullable=False)
     create_by = db.relationship('User', backref='paybooks')
+    remark = db.Column(db.String)
 
     def __repr__(self):
         return "<PayBook(money='{money}',person={person},bankcard={bankcard},\

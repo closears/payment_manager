@@ -1300,15 +1300,16 @@ class PayBookTestCase(TestBase, AddressDataMixin):
             PayBookItem(name='sys', direct=1),
             PayBookItem(name='sys_should_pay', direct=1),
             PayBookItem(name='sys_amend', direct=1))
-        bank, bank_should, bank_payed = (
+        bank, bank_should, bank_payed, bank_failed = (
             PayBookItem(name='bank', direct=1),
             PayBookItem(name='bank_should_pay', direct=1),
             PayBookItem(name='bank_payed', direct=1))
         db.session.add_all(
-            [sys, sys_amend, sys_should, bank, bank_should, bank_payed])
+            [sys, sys_amend, sys_should, bank, bank_should, bank_payed,
+             bank_failed])
         db.session.commit()
         sys.childs.extend([sys_amend, sys_should])
-        bank.childs.extend([bank_should, bank_payed])
+        bank.childs.extend([bank_should, bank_payed, bank_failed])
         db.session.commit()
         roles = [Role(name=name) for name in
                  ('person_admin', 'pay_admin', 'admin')]

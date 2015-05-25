@@ -3,7 +3,8 @@ import codecs
 import re
 from collections import namedtuple
 from datetime import datetime, date
-from sqlalchemy import exists, and_
+from sqlalchemy import exists, and_, func
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
@@ -1122,8 +1123,20 @@ def paybook_amend(pk):
         db.session.commit()
         return 'success'
     return render_template('paybook_amend.html', form=form)
-# TODO add pay book search, pay book amend, bank success reg,
-# pay book export, bank batch success reg, bank fail reg,
+
+
+def _paybook_peroid_payed(peroid):
+    b_alias = aliased(PayBook)
+    money = db.session.query(
+        func.sum(PayBook.money - b_alias.money)).filter(
+            PayBook.item_is('bank_should_pay'),
+            b_alias.item_is('bank_failed'),
+            PayBook.in_peroid(peroid),
+            b_alias.in_peroid(peroid)
+        ).scalar()
+    return abs(money) <= 0.001
+# TODO add pay book search, book export, bank batch success reg,
+# bank fail reg,
 
 
 '''Response(generator,
