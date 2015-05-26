@@ -3,8 +3,7 @@ import codecs
 import re
 from collections import namedtuple
 from datetime import datetime, date
-from sqlalchemy import exists, and_, func
-from sqlalchemy.orm import aliased
+from sqlalchemy import exists, and_, false, func
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
@@ -25,7 +24,7 @@ from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
     DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm,
-    NoteForm, PayItemForm, AmendForm)
+    NoteForm, PayItemForm, AmendForm, BatchSuccessFrom)
 
 
 def __find_obj_or_404(cls, id_field, pk):
@@ -1120,23 +1119,54 @@ def paybook_amend(pk):
         lst = []
         form.populate_obj(lst)
         db.session.add_all(lst)
+        OperationLog.log(db.session, current_user, pay_book=paybook)
         db.session.commit()
         return 'success'
     return render_template('paybook_amend.html', form=form)
 
 
-def _paybook_peroid_payed(peroid):
-    b_alias = aliased(PayBook)
-    money = db.session.query(
-        func.sum(PayBook.money - b_alias.money)).filter(
+@app.route('/paybook/batchsuccess', methods=['GET', 'POST'])
+@pay_admin_required
+@OperationLog.log_template('{{ fails }}')
+def paybook_batch_success():
+    form = BatchSuccessFrom(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        lst = []
+        money = func.sum(PayBook.money).label('money')
+        query = db.session.query(PayBook.person_id,
+                                 PayBook.bankcard_id,
+                                 PayBook.peroid.label('peroid'),
+                                 money
+        ).filter(
             PayBook.item_is('bank_should_pay'),
-            b_alias.item_is('bank_failed'),
-            PayBook.in_peroid(peroid),
-            b_alias.in_peroid(peroid)
-        ).scalar()
-    return abs(money) <= 0.001
-# TODO add pay book search, book export, bank batch success reg,
-# bank fail reg,
+            PayBook.in_peroid(form.peroid.data)
+        ).group_by(PayBook.bankcard_id
+        ).having(money > 0)
+        bankcard_ids = map(lambda b: b.id, Bankcard.query.filter(
+            Bankcard.no.in_(form.fails.data.splitlines())))
+        in_fails = PayBook.bankcard_id.in_(bankcard_ids)\
+            if bankcard_ids else false()
+        bank_should, bank_payed, bank_failed = [PayBookItem.query.filter(
+            PayBookItem.name == name).one() for name in
+            ('bank_should_pay', 'bank_payed', 'bank_failed')]
+        for book in query.filter(in_fails):
+            lst.extend(PayBook.create_tuple(
+                book.person_id, bank_payed, bank_failed,
+                book.bankcard_id, book.bankcard_id,
+                book.money, book.peroid, current_user))
+        for book in query.filter(~in_fails):
+            lst.extend(PayBook.create_tuple(
+                book.person_id, bank_should, bank_payed,
+                book.bankcard_id, book.bankcard_id,
+                book.money, book.peroid, current_user))
+        db.session.add_all(lst)
+        OperationLog.log(db.session, current_user,
+                         fails=','.join(form.fails.data.splitlines()))
+        db.session.commit()
+        return 'success'
+    return render_template('paybook_batch_success.html', form=form)
+# TODO add pay book search, book export
+# bank fail correction, bank success correction
 
 
 '''Response(generator,

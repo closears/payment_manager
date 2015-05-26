@@ -1,9 +1,10 @@
 from datetime import datetime
+from sqlalchemy import func
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
 from wtforms import (
     PasswordField, TextField, SelectField, DateField, TextAreaField)
-from wtforms.validators import Required, EqualTo, Regexp, ValidationError
+from wtforms.validators import Required, EqualTo, Regexp
 from models import db
 from models import (
     User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard,
@@ -255,3 +256,20 @@ class AmendForm(ModelForm):
                                  self.paybook.bankcard, self.paybook.bankcard,
                                  self.paybook.money, datetime.now().date(),
                                  self.user))
+
+
+class BatchSuccessFrom(Form):
+    peroid = DateField('peroid', validators=[Required()])
+    fails = TextAreaField('falied bankcard')
+
+    def _paybook_peroid_payed(self, peroid):
+        should = db.session.query(func.sum(PayBook.money)).filter(
+            PayBook.item_is('bank_should_pay')).scalar() or 0.0
+        fail = db.session.query(func.sum(PayBook.money)).filter(
+            PayBook.item_is('bank_failed')).scalar() or 0.0
+        return abs(should - fail) <= 0.001
+
+    def validate_on_submit(self):
+        if self._paybook_peroid_payed(self.peroid.data):
+            return False
+        return super(BatchSuccessFrom, self).validate_on_submit()

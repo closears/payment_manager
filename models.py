@@ -624,20 +624,20 @@ class PayBook(db.Model):
 
     @item.setter
     def item(self, val):
-        if isinstance(val, PayBookItem):
-            self._item = val
-        else:
-            self._item = PayBookItem.query.filter(
-                PayBookItem.name == val).one()
+        self._item = val
 
     @hybrid_property
+    def peroid(self):
+        return self._peroid
+
+    @peroid.expression
     def peroid(self):
         return self._peroid
 
     @peroid.setter
     def peroid(self, val):
         '''val's format is %Y%m, for example:201503'''
-        if isinstance(val, (datetime.datetime,)):
+        if isinstance(val, (datetime.datetime, datetime.date)):
             self._peroid = datetime.date(val.year, val.month, 1)
         elif isinstance(val, (str,)):
             self._peroid = datetime.datetime.strptime(val, '%Y%m').date()
@@ -673,21 +673,40 @@ class PayBook(db.Model):
         return exists().where(and_(
             PayBook.item_id == PayBookItem.id,
             PayBookItem.name == item_name))
+    
+    @hybrid_method
+    def item_in(self, item_names):
+        return self.item.name in item_names
+
+    @item_in.expression
+    def item_in(self, item_names):
+        return exists().where(and_(
+            PayBookItem.id == PayBook.item_id,
+            PayBookItem.name.in_(item_names))) if item_names else false()
 
     @classmethod
     def create_tuple(cls, person, item1, item2, bankcard1,
                      bankcard2, money, peroid, user):
 
-        def _create(item, bankcard, money):
-            return PayBook(
-                person=person,
-                bankcard=bankcard,
-                item=item,
-                money=money,
-                peroid=peroid,
-                create_by=user
-            )
-        return (_create(_item, _bankcard, _money)
+        def _create_dict(item, bankcard, money):
+            result = {}
+            if isinstance(person, int):
+                result.update(person_id=person)
+            else:
+                result.update(person=person)
+            if isinstance(bankcard, int):
+                result.update(bankcard_id=bankcard)
+            else:
+                result.update(bankcard=bankcard)
+            if isinstance(item, int):
+                result.update(item_id=item)
+            else:
+                result.update(item=item)
+            result.update(money=money)
+            result.update(peroid=peroid)
+            result.update(create_by=user)
+            return result
+        return (PayBook(**_create_dict(_item, _bankcard, _money))
                 for _item, _bankcard, _money in
                 ((item1, bankcard1, -money), (item2, bankcard2, money)))
 

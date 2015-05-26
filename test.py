@@ -1303,7 +1303,8 @@ class PayBookTestCase(TestBase, AddressDataMixin):
         bank, bank_should, bank_payed, bank_failed = (
             PayBookItem(name='bank', direct=1),
             PayBookItem(name='bank_should_pay', direct=1),
-            PayBookItem(name='bank_payed', direct=1))
+            PayBookItem(name='bank_payed', direct=1),
+            PayBookItem(name='bank_failed', direct=1))
         db.session.add_all(
             [sys, sys_amend, sys_should, bank, bank_should, bank_payed,
              bank_failed])
@@ -1318,6 +1319,10 @@ class PayBookTestCase(TestBase, AddressDataMixin):
         self.admin.roles.extend(roles)
         self.admin.address = self.parent_addr
         db.session.commit()
+
+    def _sum(self, books, item):
+        books = filter(lambda b: b.item_is(item), books)
+        return sum(map(lambda b: b.money, books))
 
     def test_paybook_upload(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
@@ -1397,8 +1402,7 @@ class PayBookTestCase(TestBase, AddressDataMixin):
         self.client.post(url_for('bankcard_bind', pk=bankcard.id),
                          data=dict(idcard='420525195107010010'))
         csvstr = r'xx|test|420525195107010010|60|xx|6228410770613888888'
-        self.client.post(url_for('paybook_upload',
-                                 peroid=date(2011, 8, 1)),
+        self.client.post(url_for('paybook_upload', peroid=date(2011, 8, 1)),
                          data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
         bank_books = filter(lambda e: e.item.name == 'bank_should_pay',
                             bankcard.paybooks)
@@ -1438,6 +1442,55 @@ class PayBookTestCase(TestBase, AddressDataMixin):
         person_bank_books = filter(lambda e: e.item.name == 'bank_should_pay',
                                    person.paybooks)
         self.assertEqual(75.00, sum(map(lambda e: e.money, person_bank_books)))
+        PayBook.query.delete()
+        db.session.commit()
+        Bankcard.query.delete()
+        db.session.commit()
+        db.session.query(Person).delete()
+        db.session.commit()
+
+    def test_paybook_batch_success(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.post(url_for('person_add'), data=dict(
+            idcard='420525195107010010',
+            name='test',
+            birthday='1951-07-01',
+            address_id=self.parent_addr.id,
+            address_detail='xxxx',
+            securi_no=uuid4().hex,
+            personal_wage='0.94'))
+        self.client.post(url_for('bankcard_add'), data=dict(
+            name='test', no='6228410770613888888'))
+        bankcard1 = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard1.id),
+                         data=dict(idcard='420525195107010010'))
+        self.client.post(url_for('person_add'), data=dict(
+            idcard='420525195107010011',
+            name='test2',
+            birthday='1951-07-01',
+            address_id=self.parent_addr.id,
+            address_detail='xxxx',
+            securi_no=uuid4().hex,
+            personal_wage='0.94'))
+        self.client.post(url_for('bankcard_add'), data=dict(
+            name='test2', no='6228410770613666666'))
+        bankcard2 = Bankcard.query.filter(
+            Bankcard.no == '6228410770613666666').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard2.id), data=dict(
+            idcard='420525195107010011'))
+        upload_str = 'x|test|420525195107010010|60|x|6228410770613888888\n' +\
+                     'x|test|420525195107010011|60|x|6228410770613666666'
+        self.client.post(url_for('paybook_upload', peroid=date(2011, 8, 1)),
+                         data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
+        book = filter(lambda b: b.item_is('bank_should_pay'),
+                      bankcard1.paybooks)[0]
+        self.assertEqual(60, book.money)
+        self.client.post(url_for('paybook_batch_success'), data=dict(
+            peroid='2011-08-01', fails='6228410770613888888'))
+        self.assertEqual(60, self._sum(bankcard1.paybooks, 'bank_should_pay'))
+        self.assertEqual(60, self._sum(bankcard1.paybooks, 'bank_failed'))
+        self.assertEqual(0, self._sum(bankcard2.paybooks, 'bank_should_pay'))
         PayBook.query.delete()
         db.session.commit()
         Bankcard.query.delete()
