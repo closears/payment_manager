@@ -622,9 +622,16 @@ class PayBook(db.Model):
     def item(self):
         return self._item
 
+    @item.expression
+    def item(self):
+        return self._item.label('item')
+
     @item.setter
     def item(self, val):
-        self._item = val
+        if isinstance(val, int):
+            self.item_id = val
+        else:
+            self._item = val
 
     @hybrid_property
     def peroid(self):
@@ -632,7 +639,7 @@ class PayBook(db.Model):
 
     @peroid.expression
     def peroid(self):
-        return self._peroid
+        return self._peroid.label('peroid')
 
     @peroid.setter
     def peroid(self, val):
@@ -642,7 +649,7 @@ class PayBook(db.Model):
         elif isinstance(val, (str,)):
             self._peroid = datetime.datetime.strptime(val, '%Y%m').date()
         else:
-            self._peroid = val
+            self._peroid = val  # may raise exception
 
     @classmethod
     def _date_range(cls, peroid):

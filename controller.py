@@ -24,7 +24,7 @@ from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
     DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm,
-    NoteForm, PayItemForm, AmendForm, BatchSuccessFrom)
+    NoteForm, PayItemForm, AmendForm, BatchSuccessFrom, FailCorrectForm)
 
 
 def __find_obj_or_404(cls, id_field, pk):
@@ -1133,15 +1133,14 @@ def paybook_batch_success():
     if request.method == 'POST' and form.validate_on_submit():
         lst = []
         money = func.sum(PayBook.money).label('money')
-        query = db.session.query(PayBook.person_id,
-                                 PayBook.bankcard_id,
-                                 PayBook.peroid.label('peroid'),
-                                 money
-        ).filter(
-            PayBook.item_is('bank_should_pay'),
-            PayBook.in_peroid(form.peroid.data)
-        ).group_by(PayBook.bankcard_id
-        ).having(money > 0)
+        query = db.session.query(
+            PayBook.person_id,
+            PayBook.bankcard_id,
+            PayBook.peroid.label('peroid'),
+            money).filter(
+                PayBook.item_is('bank_should_pay'),
+                PayBook.in_peroid(form.peroid.data)).group_by(
+                    PayBook.bankcard_id).having(money > 0)
         bankcard_ids = map(lambda b: b.id, Bankcard.query.filter(
             Bankcard.no.in_(form.fails.data.splitlines())))
         in_fails = PayBook.bankcard_id.in_(bankcard_ids)\
@@ -1151,7 +1150,7 @@ def paybook_batch_success():
             ('bank_should_pay', 'bank_payed', 'bank_failed')]
         for book in query.filter(in_fails):
             lst.extend(PayBook.create_tuple(
-                book.person_id, bank_payed, bank_failed,
+                book.person_id, bank_should, bank_failed,
                 book.bankcard_id, book.bankcard_id,
                 book.money, book.peroid, current_user))
         for book in query.filter(~in_fails):
@@ -1165,8 +1164,61 @@ def paybook_batch_success():
         db.session.commit()
         return 'success'
     return render_template('paybook_batch_success.html', form=form)
+
+
+@app.route('/paybook/bankcard/<int:bankcard_id>' +
+           '/peroid/<date:peroid>/failcrrect',
+           methods=['GET', 'POST'])
+@pay_admin_required
+@OperationLog.log_template('{{ bankcard_id }},{{ peroid }}')
+def paybook_fail_correct(bankcard_id, peroid):
+    form = FailCorrectForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        money_q = func.sum(PayBook.money).label('money')
+        books = db.session.query(
+            PayBook.person_id,
+            PayBook.bankcard_id,
+            money_q,).filter(
+                PayBook.bankcard_id == bankcard_id,
+                PayBook.item_is('bank_failed'),
+                PayBook.in_peroid(peroid)).group_by(
+                    PayBook.bankcard_id).having(money_q > 0).all()
+        bank_failed, bank_should = [
+            PayBookItem.query.filter(
+                PayBookItem.name == name).one()
+            for name in ('bank_failed', 'bank_should_pay')]
+        try:
+            bankcard2 = Bankcard.query.filter(
+                Bankcard.no == form.bankcard.data).one()
+        except NoResultFound:
+            flash('No bankcard find by no:{}. Please add it first.'.format(
+                form.bankcard.data))
+            abort(404)
+        if not bankcard2.binded:
+            flash('Bankcard with no:{} not binded, bind it first'.format(
+                bankcard2.no))
+            abort(500)
+        db.session.add_all(
+            reduce(
+                lambda lst, b: lst.extend(
+                    PayBook.create_tuple(
+                        b.person_id,
+                        bank_failed,
+                        bank_should,
+                        bankcard2,
+                        bankcard2,
+                        b.money,
+                        datetime.now(),
+                        current_user)) or lst,
+                books,
+                []))
+        OperationLog.log(db.session, current_user, bankcard_id=bankcard_id,
+                         peroid=peroid)
+        db.session.commit()
+        return 'success'
+    return render_template('paybook_fail_correct.html', form=form)
 # TODO add pay book search, book export
-# bank fail correction, bank success correction
+# bank success correction
 
 
 '''Response(generator,

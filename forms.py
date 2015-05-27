@@ -1,10 +1,10 @@
 from datetime import datetime
-from sqlalchemy import func
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
 from wtforms import (
-    PasswordField, TextField, SelectField, DateField, TextAreaField)
-from wtforms.validators import Required, EqualTo, Regexp
+    PasswordField, TextField, SelectField, DateField, TextAreaField,
+    DecimalField)
+from wtforms.validators import Required, EqualTo, Regexp, NumberRange
 from models import db
 from models import (
     User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard,
@@ -224,7 +224,10 @@ class PayItemForm(ModelForm):
 class AmendForm(ModelForm):
     bankcard = TextField('bankcard', validators=[Regexp(
         r'^(?:\d{19})|(?:\d{2}-\d{15})$')])
-    money = TextField('money', validators=[Regexp(r'^-?\d+(?:\.\d{2})?$')])
+    money = DecimalField(
+        'money',
+        validators=[Required(), NumberRange(min=0.01, max=1000000)],
+        places=7, rounding=2)
 
     def __init__(self, **kwargs):
         super(AmendForm, self).__init__(**kwargs)
@@ -262,14 +265,8 @@ class BatchSuccessFrom(Form):
     peroid = DateField('peroid', validators=[Required()])
     fails = TextAreaField('falied bankcard')
 
-    def _paybook_peroid_payed(self, peroid):
-        should = db.session.query(func.sum(PayBook.money)).filter(
-            PayBook.item_is('bank_should_pay')).scalar() or 0.0
-        fail = db.session.query(func.sum(PayBook.money)).filter(
-            PayBook.item_is('bank_failed')).scalar() or 0.0
-        return abs(should - fail) <= 0.001
 
-    def validate_on_submit(self):
-        if self._paybook_peroid_payed(self.peroid.data):
-            return False
-        return super(BatchSuccessFrom, self).validate_on_submit()
+class FailCorrectForm(Form):
+    bankcard = TextField(
+        'bankcard', validators=[Regexp('^(?:\d{19})|(?:{\d{2}-\d{15})$')])
+
