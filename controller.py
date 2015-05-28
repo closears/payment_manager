@@ -24,7 +24,8 @@ from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
     DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm,
-    NoteForm, PayItemForm, AmendForm, BatchSuccessFrom, FailCorrectForm)
+    NoteForm, PayItemForm, AmendForm, BatchSuccessFrom, FailCorrectForm,
+    SuccessCorrectForm)
 
 
 def __find_obj_or_404(cls, id_field, pk):
@@ -1054,7 +1055,7 @@ def pay_item_detail(pk):
 
 @app.route('/paybook/upload/<date:peroid>', methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template()
+@OperationLog.log_template('{{ peroid }}')
 def paybook_upload(peroid):
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1103,38 +1104,38 @@ def paybook_upload(peroid):
                 person, item1, item2, bankcard, bankcard, float(record.money),
                 peroid, current_user))
             line_no += 1
-        OperationLog.log(db.session, current_user)
+        OperationLog.log(db.session, current_user, peroid=peroid)
         db.session.commit()
         return 'success'
     return render_template('upload.html', form=form)
 
 
-@app.route('/paybook/bankcard/<int:bankcard_id>' +
+@app.route('/paybook/person/<int:person_id>' +
            '/peroid/<date:peroid>/amend', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ pay_book.peroid }},{{ pay_book.bankcard_id }}')
-def paybook_amend(bankcard_id, peroid):
-    try:
-        money = func.sum(PayBook.money).label('money')
-        paybook = db.session.query(
-            PayBook.person_id.label('person'),
-            PayBook.bankcard_id.label('bankcard'),
-            PayBook.item_id.label('item'),
-            money).filter(
-                PayBook.item_is('sys_should_pay'),
-                PayBook.bankcard_id == bankcard_id,
-                PayBook.in_peroid(peroid)).group_by(
-                    PayBook.bankcard_id).having(money < 0).one()
-    except NoResultFound:
-        flash('No paybook find in peroid:{} by bankcard_id:{}'.format(
-            peroid, bankcard_id))
-        abort(404)
-    form = AmendForm(obj=paybook, user=current_user, formdata=request.form)
-    if request.method == 'POST' and form.validate_on_submit():
+@OperationLog.log_template('{{ person_id }},{{ peroid }}')
+def paybook_amend(person_id, peroid):
+    money = func.sum(PayBook.money).label('money')
+    paybooks = db.session.query(
+        PayBook.person_id.label('person'),
+        PayBook.bankcard_id.label('bankcard'),
+        PayBook.item_id.label('item'),
+        PayBook.peroid,
+        money).filter(
+            PayBook.item_is('sys_should_pay'),
+            PayBook.person_id == person_id,
+            PayBook.in_peroid(peroid)).group_by(
+                PayBook.bankcard_id).having(money < 0).all()
+    form = AmendForm(obj=paybooks, user=current_user, formdata=request.form)
+    payed = db.session.query(money).filter(
+        PayBook.in_peroid(peroid),
+        PayBook.item_is('bank_should_pay')).scalar() == 0
+    if not payed and request.method == 'POST' and form.validate_on_submit():
         lst = []
         form.populate_obj(lst)
         db.session.add_all(lst)
-        OperationLog.log(db.session, current_user, pay_book=paybook)
+        OperationLog.log(db.session, current_user, person_id=person_id,
+                         peroid=peroid)
         db.session.commit()
         return 'success'
     return render_template('paybook_amend.html', form=form)
@@ -1146,7 +1147,6 @@ def paybook_amend(bankcard_id, peroid):
 def paybook_batch_success():
     form = BatchSuccessFrom(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        lst = []
         money = func.sum(PayBook.money).label('money')
         query = db.session.query(
             PayBook.person_id,
@@ -1156,13 +1156,14 @@ def paybook_batch_success():
                 PayBook.item_is('bank_should_pay'),
                 PayBook.in_peroid(form.peroid.data)).group_by(
                     PayBook.bankcard_id).having(money > 0)
-        bankcard_ids = map(lambda b: b.id, Bankcard.query.filter(
-            Bankcard.no.in_(form.fails.data.splitlines())))
-        in_fails = PayBook.bankcard_id.in_(bankcard_ids)\
-            if bankcard_ids else false()
+        in_fails = exists().where(and_(
+            PayBook.bankcard_id == Bankcard.id,
+            Bankcard.no.in_(form.fails.data.splitlines())))\
+            if form.fails.data.splitlines() else false()
         bank_should, bank_payed, bank_failed = [PayBookItem.query.filter(
             PayBookItem.name == name).one() for name in
             ('bank_should_pay', 'bank_payed', 'bank_failed')]
+        lst = []
         for book in query.filter(in_fails):
             lst.extend(PayBook.create_tuple(
                 book.person_id, bank_should, bank_failed,
@@ -1181,23 +1182,22 @@ def paybook_batch_success():
     return render_template('paybook_batch_success.html', form=form)
 
 
-@app.route('/paybook/bankcard/<int:bankcard_id>' +
+@app.route('/paybook/person/<int:person_id>' +
            '/peroid/<date:peroid>/failcrrect',
            methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template('{{ bankcard_id }},{{ peroid }}')
-def paybook_fail_correct(bankcard_id, peroid):
+@OperationLog.log_template('{{ person_id }},{{ peroid }}')
+def paybook_fail_correct(person_id, peroid):
     form = FailCorrectForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         money_q = func.sum(PayBook.money).label('money')
         books = db.session.query(
-            PayBook.person_id,
-            PayBook.bankcard_id,
-            money_q,).filter(
-                PayBook.bankcard_id == bankcard_id,
-                PayBook.item_is('bank_failed'),
-                PayBook.in_peroid(peroid)).group_by(
-                    PayBook.bankcard_id).having(money_q > 0).all()
+            PayBook.bankcard_id.label('bankcard'),
+            money_q).filter(
+            PayBook.person_id == person_id,
+            PayBook.item_is('bank_failed'),
+            PayBook.in_peroid(peroid)).group_by(
+                PayBook.bankcard_id).having(money_q > 0).all()
         bank_failed, bank_should = [
             PayBookItem.query.filter(
                 PayBookItem.name == name).one()
@@ -1213,21 +1213,23 @@ def paybook_fail_correct(bankcard_id, peroid):
             flash('Bankcard with no:{} not binded, bind it first'.format(
                 bankcard2.no))
             abort(500)
+        # valish all money of paybook with failed bankcard
+        # in bank failed item and
+        # transfer to book record with new bankcard
         db.session.add_all(
             reduce(
                 lambda lst, b: lst.extend(
                     PayBook.create_tuple(
-                        b.person_id,
+                        person_id,
                         bank_failed,
                         bank_should,
-                        bankcard2,
+                        b.bankcard,
                         bankcard2,
                         b.money,
                         datetime.now(),
                         current_user)) or lst,
-                books,
-                []))
-        OperationLog.log(db.session, current_user, bankcard_id=bankcard_id,
+                books, []))
+        OperationLog.log(db.session, current_user, person_id=person_id,
                          peroid=peroid)
         db.session.commit()
         return 'success'
@@ -1235,14 +1237,46 @@ def paybook_fail_correct(bankcard_id, peroid):
 
 
 @app.route('/paybook/bankcard/<int:bankcard_id>' +
-           '/peroid/<date:peroid>', methods=['GET', 'POST'])
+           '/person/<int:person_id>' +
+           '/peroid/<date:peroid>/successcorrect', methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template()
-def paybook_success_correct(bankcard_id, peroid):
-    pass
+@OperationLog.log_template('{{ person_id }},{{ bankcard_id }},{{ peroid }}')
+def paybook_success_correct(bankcard_id, person_id, peroid):
+    form = SuccessCorrectForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        money = func.sum(PayBook.money).label('money')
+        books = db.session.query(
+            PayBook.person_id.label('person'),
+            PayBook.bankcard_id.label('bankcard'),
+            PayBook.peroid,
+            money).filter(
+                PayBook.item_is('bank_payed'),
+                PayBook.in_peroid(peroid),
+                PayBook.person_id == person_id,
+                PayBook.bankcard_id == bankcard_id).group_by(
+                    PayBook.person_id, PayBook.bankcard_id).having(
+                        money > 0).all()
+        bank_payed, bank_failed = [
+            PayBookItem.query.filter(PayBookItem.name == name).one()
+            for name in ('bank_payed', 'bank_failed')]
+        if books:
+            db.session.add_all(
+                PayBook.create_tuple(
+                    person_id,
+                    bank_payed,
+                    bank_failed,
+                    bankcard_id,
+                    bankcard_id,
+                    min(form.money.data, books[0].money),
+                    peroid,
+                    current_user))
+        OperationLog.log(db.session, current_user, person_id=person_id,
+                         bankcard_id=bankcard_id, peroid=peroid)
+        db.session.commit()
+        return 'success'
+    return render_template('paybook_success_correct.html', form=form)
 # TODO add pay book search, book export
-# bank success correction
-
+# fail searchs, success searchs
 
 '''Response(generator,
                        mimetype="text/plain",

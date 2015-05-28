@@ -231,18 +231,19 @@ class AmendForm(ModelForm):
 
     def __init__(self, **kwargs):
         super(AmendForm, self).__init__(**kwargs)
-        self.paybook = kwargs['obj']
+        self.paybooks = kwargs['obj']
         self.user = kwargs['user']
 
     def validate_on_submit(self):
-        item = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
-            self.paybook.item, PayBookItem.query)
-        if item.name not in ['sys_should_pay', 'bank_payed']:
-            return False  # only sys_should_pay, bank_payed can amend
-        bankcard = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
-            self.paybook.bankcard, Bankcard.query)
-        if not bankcard.binded:
-            return False
+        for book in self.paybooks:
+            item = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
+                book.item, PayBookItem.query)
+            if item.name not in ['sys_should_pay', 'bank_payed']:
+                return False
+            bankcard = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
+                book.bankcard, Bankcard.query)
+            if not bankcard.binded:
+                return False
         return super(AmendForm, self).validate_on_submit()
 
     def populate_obj(self, lst):
@@ -254,15 +255,19 @@ class AmendForm(ModelForm):
             PayBookItem.name == 'bank_should_pay').one()
         bankcard = Bankcard.query.filter(
             Bankcard.no == self.bankcard.data).one()
-        lst.extend(
-            PayBook.create_tuple(self.paybook.person, sys_amend, bank_should,
-                                 bankcard, bankcard, float(self.money.data),
-                                 datetime.now().date(), self.user))
-        lst.extend(
-            PayBook.create_tuple(self.paybook.person, sys_should, bank_should,
-                                 self.paybook.bankcard, self.paybook.bankcard,
-                                 self.paybook.money, datetime.now().date(),
-                                 self.user))
+        if self.paybooks:
+            # valish all money of all bankcards witch belong person
+            lst.extend(reduce(
+                lambda x, y: x.extend(PayBook.create_tuple(
+                    y.person, sys_should, bank_should, y.bankcard, y.bankcard,
+                    y.money, y.peroid, self.user)) or x,
+                self.paybooks, []))
+            # amend money to new bankcard
+            lst.extend(
+                PayBook.create_tuple(
+                    self.paybooks[0].person, sys_amend, bank_should, bankcard,
+                    bankcard, self.money.data, datetime.now().date(),
+                    self.user))
 
 
 class BatchSuccessFrom(Form):
@@ -273,3 +278,9 @@ class BatchSuccessFrom(Form):
 class FailCorrectForm(Form):
     bankcard = TextField(
         'bankcard', validators=[Regexp('^(?:\d{19})|(?:{\d{2}-\d{15})$')])
+
+
+class SuccessCorrectForm(Form):
+    money = DecimalField('failed money',
+                         validators=[NumberRange(0.01, 1000000)],
+                         places=7, rounding=2)
