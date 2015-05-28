@@ -680,7 +680,7 @@ class PayBook(db.Model):
         return exists().where(and_(
             PayBook.item_id == PayBookItem.id,
             PayBookItem.name == item_name))
-    
+
     @hybrid_method
     def item_in(self, item_names):
         return self.item.name in item_names

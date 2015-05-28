@@ -1109,11 +1109,26 @@ def paybook_upload(peroid):
     return render_template('upload.html', form=form)
 
 
-@app.route('/paybook/<int:pk>/amend', methods=['GET', 'POST'])
+@app.route('/paybook/bankcard/<int:bankcard_id>' +
+           '/peroid/<date:peroid>/amend', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ pay_book.id }},{{ pay_book.person.idcard }}')
-def paybook_amend(pk):
-    paybook = db.my_get_obj_or_404(PayBook, PayBook.id, pk)
+@OperationLog.log_template('{{ pay_book.peroid }},{{ pay_book.bankcard_id }}')
+def paybook_amend(bankcard_id, peroid):
+    try:
+        money = func.sum(PayBook.money).label('money')
+        paybook = db.session.query(
+            PayBook.person_id.label('person'),
+            PayBook.bankcard_id.label('bankcard'),
+            PayBook.item_id.label('item'),
+            money).filter(
+                PayBook.item_is('sys_should_pay'),
+                PayBook.bankcard_id == bankcard_id,
+                PayBook.in_peroid(peroid)).group_by(
+                    PayBook.bankcard_id).having(money < 0).one()
+    except NoResultFound:
+        flash('No paybook find in peroid:{} by bankcard_id:{}'.format(
+            peroid, bankcard_id))
+        abort(404)
     form = AmendForm(obj=paybook, user=current_user, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         lst = []
@@ -1217,6 +1232,14 @@ def paybook_fail_correct(bankcard_id, peroid):
         db.session.commit()
         return 'success'
     return render_template('paybook_fail_correct.html', form=form)
+
+
+@app.route('/paybook/bankcard/<int:bankcard_id>' +
+           '/peroid/<date:peroid>', methods=['GET', 'POST'])
+@pay_admin_required
+@OperationLog.log_template()
+def paybook_success_correct(bankcard_id, peroid):
+    pass
 # TODO add pay book search, book export
 # bank success correction
 

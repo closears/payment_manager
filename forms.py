@@ -235,9 +235,13 @@ class AmendForm(ModelForm):
         self.user = kwargs['user']
 
     def validate_on_submit(self):
-        if self.paybook.item.name != 'sys_should_pay':
-            return False
-        if not self.paybook.bankcard.binded:
+        item = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
+            self.paybook.item, PayBookItem.query)
+        if item.name not in ['sys_should_pay', 'bank_payed']:
+            return False  # only sys_should_pay, bank_payed can amend
+        bankcard = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
+            self.paybook.bankcard, Bankcard.query)
+        if not bankcard.binded:
             return False
         return super(AmendForm, self).validate_on_submit()
 
@@ -269,4 +273,3 @@ class BatchSuccessFrom(Form):
 class FailCorrectForm(Form):
     bankcard = TextField(
         'bankcard', validators=[Regexp('^(?:\d{19})|(?:{\d{2}-\d{15})$')])
-

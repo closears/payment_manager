@@ -1409,18 +1409,20 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         bank_books = filter(lambda e: e.item.name == 'bank_should_pay',
                             bankcard.paybooks)
         self.assertEqual(60.0, sum(map(lambda book: book.money, bank_books)))
-        sys_book = filter(lambda e: e.item.name == 'sys_should_pay',
-                          bankcard.paybooks)[0]
         self.client.post(url_for('bankcard_add'), data=dict(
             name='test2', no='6228410770613666666'))
         bankcard2 = Bankcard.query.filter(
             Bankcard.no == '6228410770613666666').one()
         self.client.post(url_for('bankcard_bind', pk=bankcard2.id),
                          data=dict(idcard='420525195107010010'))
-        rv = self.client.post(url_for('paybook_amend', pk=sys_book.id),
-                              data=dict(
-                                  bankcard='6228410770613666666',
-                                  money='75.00'))
+        rv = self.client.post(
+            url_for(
+                'paybook_amend',
+                bankcard_id=bankcard.id,
+                peroid=date(2011, 8, 1)),
+            data=dict(
+                bankcard='6228410770613666666',
+                money='75.00'))
         self.assert200(rv)
         sys_books1 = filter(lambda e: e.item.name == 'sys_should_pay',
                             bankcard.paybooks)
