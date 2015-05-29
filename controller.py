@@ -1,9 +1,10 @@
 import csv
 import codecs
 import re
+from functools import wraps
 from collections import namedtuple
 from datetime import datetime, date
-from sqlalchemy import exists, and_, false, func
+from sqlalchemy import exists, and_, or_, false, func
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
@@ -110,6 +111,27 @@ person_admin_required = Permission(RoleNeed('person_admin')).require(403)
 pay_admin_required = Permission(RoleNeed('pay_admin')).require(403)
 
 
+def person_addr_filter(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        address_ids = map(lambda a: a.id, current_user.descendants)
+        address_ids.append(current_user.address_id)
+        old_person_query, old_bankcard_query\
+            = Person.query, Bankcard.query
+        Person.query = Person.query.filter(
+            Person.address_id.in_(address_ids))
+        Bankcard.query = Bankcard.query.filter(or_(
+            Bankcard.owner_id.is_(None),
+            exists().where(and_(
+                Bankcard.owner_id == Person.id,
+                Person.address_id.in_(address_ids)))))
+        result = f(*args, **kwargs)
+        Bankcard.query = old_bankcard_query
+        Person.query = old_person_query
+        return result
+    return wrapper
+
+
 @login_manager.user_loader
 def load_user(userid):
     try:
@@ -140,7 +162,6 @@ def on_identity_loaded(sender, identity):
     if hasattr(current_user, 'address') and current_user.address:
         ids = [address.id for address in current_user.address.descendants]
         ids.append(current_user.address.id)
-        Person.query = Person.query.filter(Person.address_id.in_(ids))
         for id in ids:
             identity.provides.add(AddressAccessPermission(id))
 
@@ -601,6 +622,7 @@ def person_add():
 
 @app.route('/person/<int:pk>/delete', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }},{{ person.idcard }}')
 def person_delete(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -617,6 +639,7 @@ def person_delete(pk):
 
 @app.route('/person/<int:pk>/retire_reg', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }},')
 def person_regire_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -636,6 +659,7 @@ def person_regire_reg(pk):
 
 @app.route('/person/<int:pk>/normal_reg', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }},')
 def person_normal_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -655,6 +679,7 @@ def person_normal_reg(pk):
 
 @app.route('/person/batch_normal', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }},')
 def person_batch_normal():
     form = PeroidForm(request.form)
@@ -673,6 +698,7 @@ def person_batch_normal():
 
 @app.route('/person/<int:pk>/dead_reg', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }},')
 def person_dead_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -692,6 +718,7 @@ def person_dead_reg(pk):
 
 @app.route('/person/<int:pk>/abort_reg', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }},')
 def person_abort_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -711,6 +738,7 @@ def person_abort_reg(pk):
 
 @app.route('/person/<int:pk>/suspend', methods=['GET', 'POST'])
 @person_admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }}')
 def person_suspend_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -730,6 +758,7 @@ def person_suspend_reg(pk):
 
 @app.route('/person/<int:pk>/resume', methods=['GET', 'POST'])
 @person_admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }},')
 def person_resume_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -749,6 +778,7 @@ def person_resume_reg(pk):
 
 @app.route('/person/<int:pk>/address_change', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{person.id }},{{ person.idcard }},' +
                            '{{ person.name }},{{ person.idcard }},')
 def person_update(pk):
@@ -766,6 +796,7 @@ def person_update(pk):
            'addresslike=<none:address>&page=<int:page>&perpage=<int:per_page>',
            methods=['GET'])
 @login_required
+@person_addr_filter
 def person_search(idcard, name, address, page, per_page):
     query = Person.query
     if idcard:
@@ -783,6 +814,7 @@ def person_search(idcard, name, address, page, per_page):
 
 @app.route('/person/<int:pk>/standardbind', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }},{{ form.standard_id.data }}')
 def standard_bind(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -859,8 +891,8 @@ def bankcard_add():
 
 @app.route('/bankcard/<int:pk>/bind/', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ bankcard.id }},{{ bankcard.owner.idcard }}' +
-                           '{% if person %}-old owner{% endif %}')
+@person_addr_filter
+@OperationLog.log_template('{{ bankcard.id }},{{ bankcard.owner.idcard }}')
 def bankcard_bind(pk):
     bankcard = db.my_get_obj_or_404(Bankcard, Bankcard.id, pk)
     form = BankcardBindForm(request.form)
@@ -884,6 +916,7 @@ def bankcard_bind(pk):
 
 @app.route('/bankcard/<int:pk>/update', methods=['GET', 'POST'])
 @admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ bankcard.id }}')
 def bankcard_update(pk):
     bankcard = db.my_get_obj_or_404(Bankcard, Bankcard.id, pk)
@@ -899,13 +932,10 @@ def bankcard_update(pk):
 @app.route('/bankcard/search?nolike=<no>&namelike=<name>' +
            '&idcardlike=<none:idcard>&page=<int:page>&per_page=<int:per_page>',
            methods=['GET'])
+@person_addr_filter
 @login_required
 def bankcard_search(no, name, idcard, page, per_page):
-    stmt = exists().where(and_(
-                          Bankcard.owner_id == Person.id,
-                          Person.address_id == Address.id,
-                          Address.id == current_user.address.id))
-    query = Bankcard.query.filter(stmt)
+    query = Bankcard.query
     if no:
         query = query.filter(Bankcard.no.like('{}%'.format(no)))
     if name:
@@ -936,6 +966,7 @@ def note_add():
 
 @app.route('/note/forperson/<int:pk>', methods=['GET', 'POST'])
 @person_admin_required
+@person_addr_filter
 @OperationLog.log_template('{{ person.id }}')
 def note_add_to_person(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
@@ -1007,9 +1038,10 @@ def note_clean():
            methods=['GET'])
 @login_required
 def note_search(finished, page, per_page):
-    query = Note.query.filter(Note.user_id == current_user.id).filter(
-        Note.effective.is_(True)).filter(
-            Note.finished == finished)
+    query = Note.query.filter(Note.effective.is_(True)).filter(
+        Note.finished == finished)
+    if 'admin' not in map(lambda r: r.name, current_user.roles):
+        query = query.filter(Note.user_id == current_user.id)
     return render_template('note_search.html', pagination=query.paginate(
         page, per_page))
 
@@ -1275,6 +1307,30 @@ def paybook_success_correct(bankcard_id, person_id, peroid):
         db.session.commit()
         return 'success'
     return render_template('paybook_success_correct.html', form=form)
+
+
+def _search_pay_books(person_id, item_name, peroid, negative=False):
+    money = func.sum(PayBook.money).label('money')
+    query = db.session.query(
+        PayBook.peroid,
+        Person.idcard,
+        Person.name.label('person_name'),
+        Bankcard.no.label('bankcard_no'),
+        Bankcard.name.label('bankcard_name'),
+        money).join(
+            Person, Person.id == PayBook.person_id).join(
+                Bankcard, Bankcard.id == PayBook.bankcard_id).filter(
+                    PayBook.item_is(item_name),
+                    PayBook.in_peroid(peroid),
+                    PayBook.person_id == person_id).group_by(
+                        PayBook.bankcard_id).having(
+                            negative and money < 0 or money > 0)
+    return query.all()
+
+
+@app.route()
+def paybook_success_search():
+    pass
 # TODO add pay book search, book export
 # fail searchs, success searchs
 
