@@ -114,7 +114,9 @@ pay_admin_required = Permission(RoleNeed('pay_admin')).require(403)
 def person_addr_filter(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        address_ids = map(lambda a: a.id, current_user.descendants)
+        address_ids = map(
+            lambda a: a.id,
+            current_user.address and current_user.address.descendants or [])
         address_ids.append(current_user.address_id)
         old_person_query, old_bankcard_query\
             = Person.query, Bankcard.query
@@ -1328,7 +1330,7 @@ def _search_pay_books(person_id, item_name, peroid, negative=False):
     return query.all()
 
 
-@app.route()
+@app.route('/paybook/search', methods=['GET', 'POST'])
 def paybook_success_search():
     pass
 # TODO add pay book search, book export

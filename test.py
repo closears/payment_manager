@@ -575,6 +575,7 @@ class PersonTestBase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
     def setUp(self):
         super(PersonTestBase, self).setUp()
         AddressDataMixin.__init__(self)
+        PersonAddRemoveMixin.__init__(self)
         self.admin.roles.append(Role(name='admin'))
         self.admin.address = self.parent_addr
         db.session.commit()
@@ -1039,7 +1040,7 @@ class BankcardTestCase3(BankcardTestBase):
         rv = self.client.get(url_for(
             'bankcard_search',
             no='622841', name='te', idcard='None', page=1, per_page=2))
-        self.assertNotIn('test', rv.data)
+        self.assertIn('test', rv.data)
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.admin.address.id)
         person = Person.query.filter(
@@ -1069,6 +1070,7 @@ class NoteTestCase(TestBase, AddressDataMixin):
         db.session.add_all([role, role2])
         db.session.commit()
         self.admin.roles.extend([role, role2])
+        self.admin.address = self.parent_addr
         db.session.commit()
 
     def test(self):
@@ -1242,7 +1244,7 @@ class NoteTestCase(TestBase, AddressDataMixin):
             end_date=self._days_tomorrow_str(self.tomorrow)))
         rv = self.client.get(url_for('note_search', finished=False, page=1,
                                      per_page=10))
-        self.assertNotIn('xxxyyy', rv.data)
+        self.assertIn('xxxyyy', rv.data)
         note = Note.query.filter(Note.content == 'xxxyyy').one()
         self.assertEqual(self.yestoday, note.start_date)
         self.assertEqual(note.user, user)
@@ -1268,6 +1270,7 @@ class PayItemTestCase(TestBase):
         self.client.post(url_for('payitem_add'), data=dict(
             name='sys',
             direct=1))
+        self.client.get('/')
         item = PayBookItem.query.filter(PayBookItem.name == 'sys').one()
         self.assertEqual(1, item.direct)
         db.session.delete(item)
