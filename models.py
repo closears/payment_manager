@@ -669,7 +669,10 @@ class PayBook(db.Model):
     @in_peroid.expression
     def in_peroid(cls, peroid):
         m_range = cls._date_range(peroid)
-        return and_(cls.peroid >= m_range[0], cls.peroid <= m_range[1])
+        return and_(
+            cls.peroid.isnot(None),
+            cls.peroid >= m_range[0],
+            cls.peroid <= m_range[1])
 
     @hybrid_method
     def item_is(self, item_name):

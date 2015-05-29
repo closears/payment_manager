@@ -52,10 +52,12 @@ class DateConverter(BaseConverter):
         self.map = map
         self.regex = r'\d{4}-\d{2}-\d{2}'
 
-    def to_python(self, value):
+    @classmethod
+    def to_python(cls, value):
         return value and datetime.strptime(value, '%Y-%m-%d').date()
 
-    def to_url(self, value):
+    @classmethod
+    def to_url(cls, value):
         return value.strftime('%Y-%m-%d') if isinstance(
             value, (datetime, date)) else value
 
@@ -65,20 +67,24 @@ class DateTimeConverter(BaseConverter):
         self.map = map
         self.regex = r'\d{4}-\d{2}-\d{2}'
 
-    def to_python(self, value):
+    @classmethod
+    def to_python(cls, value):
         return value and datetime.strptime(value, '%Y-%m-%d')
 
-    def to_url(self, value):
+    @classmethod
+    def to_url(cls, value):
         return value.strftime('%Y-%m-%d') if isinstance(
             value, (datetime, date)) else value
 
 
 class NoneConverter(BaseConverter):
 
-    def to_python(self, value):
+    @classmethod
+    def to_python(cls, value):
         return None if value == 'None' else value
 
-    def to_url(self, value):
+    @classmethod
+    def to_url(cls, value):
         return str(value)
 
 
@@ -87,10 +93,12 @@ class BooleanConverter(BaseConverter):
         self.map = map
         self.regex == 'yes|no'
 
-    def to_python(self, value):
+    @classmethod
+    def to_python(cls, value):
         return value == 'yes'
 
-    def to_url(self, value):
+    @classmethod
+    def to_url(cls, value):
         return value and 'yes' or 'no'
 
 
@@ -439,8 +447,8 @@ def admin_user_detail(pk):
 
 
 @app.route(
-    '/admin/user/search?name=<regex(r"(:?[a-zA-Z][a-zA-Z_0-9]*)?"):name>' +
-    'page=<int:page>&per_page=<int:per_page>',
+    '/admin/user/page/<int:page>/per_page/<int:per_page>/search' +
+    '?name=<regex(r"(:?[a-zA-Z][a-zA-Z_0-9]*)?"):name>',
     methods=['GET']
 )
 @admin_required
@@ -489,13 +497,14 @@ def admin_role_remove(pk):
 
 
 @app.route(
-    '/admin/log/search?operator-id=<int:operator_id>' +
-    '&start_date=<datetime:start_date>&end_date=<datetime:end_date>' +
-    '&page=<int:page>&per_page=<int:per_page>',
-    methods=['GET']
-)
+    '/admin/log/page/<int:page>/per_page/<int:per_page>/search',
+    methods=['GET'])
 @admin_required
-def admin_log_search(operator_id, start_date, end_date, page, per_page):
+def admin_log_search(page, per_page):
+    operator_id = request.args.get('operator_id')
+    start_date, end_date = map(
+        lambda x: datetime.strptime(request.args.get(x), '%Y-%m-%d').date(),
+        ('start_date', 'end_date'))
     pagination = OperationLog.query.filter(
         OperationLog.operator_id == operator_id).filter(
             OperationLog.time >= start_date).filter(
@@ -590,10 +599,11 @@ def address_edit(pk):
 
 
 @app.route(
-    '/address/search?name=<name>&page=<int:page>&per_page=<int:per_page>',
+    '/address/page/<int:page>/perpage/<int:per_page>/search',
     methods=['GET'])
 @login_required
-def address_search(name, page, per_page):
+def address_search(page, per_page):
+    name = lambda x: (x != 'None' and x or None)(request.args.get('name'))
     query = Address.query.filter(
         Address.id.in_([a.id for a in current_user.address.descendants]),
         Address.name.like(unicode('{}%').format(name)))
@@ -794,12 +804,14 @@ def person_update(pk):
     return render_template('person_edit.html', form=form)
 
 
-@app.route('/person/search?idcardlike=<none:idcard>&namelike=<none:name>' +
-           'addresslike=<none:address>&page=<int:page>&perpage=<int:per_page>',
+@app.route('/person/page/<int:page>/perpage/<int:per_page>/search',
            methods=['GET'])
 @login_required
 @person_addr_filter
-def person_search(idcard, name, address, page, per_page):
+def person_search(page, per_page):
+    idcard, name, address = map(
+        lambda x: (lambda y: y != 'None' and y or None)(request.args.get(x)),
+        ('idcard', 'name', 'address'))
     query = Person.query
     if idcard:
         query = query.filter(Person.idcard.like('{}%'.format(idcard)))
@@ -833,12 +845,14 @@ def standard_bind(pk):
     return render_template('standard_bind.html', form=form)
 
 
-@app.route('/person/<int:pk>/logsearch?' +
-           'startdate=<date:start_date>&enddate=<date:end_date>' +
-           '&operatorid=<int:operator_id>' +
-           '&page=<int:page>&perpage=<int:per_page>', methods=['GET'])
+@app.route('/person/<int:pk>/page/<int:page>/perpage/<int:per_page>/logsearch',
+           methods=['GET'])
 @login_required
-def person_log_search(pk, start_date, end_date, operator_id, page, per_page):
+def person_log_search(pk, page, per_page):
+    start_date, end_date = map(
+        lambda x: datetime.strptime(request.args.get(x), '%Y-%m-%d').date(),
+        ('start_date', 'end_date'))
+    operator_id = request.args.get('operator_id')
     query = OperationLog.query.filter(
         OperationLog.method.in_([m.__name__ for m in (
             person_abort_reg,
@@ -931,12 +945,14 @@ def bankcard_update(pk):
     return render_template('bankcard_edit.html', form=form)
 
 
-@app.route('/bankcard/search?nolike=<no>&namelike=<name>' +
-           '&idcardlike=<none:idcard>&page=<int:page>&per_page=<int:per_page>',
+@app.route('/bankcard/page/<int:page>/per-page/<int:per_page>/search',
            methods=['GET'])
 @person_addr_filter
 @login_required
-def bankcard_search(no, name, idcard, page, per_page):
+def bankcard_search(page, per_page):
+    no, name, idcard = map(
+        lambda x: (lambda y: y != 'None' and y or None)(request.args.get(x)),
+        ('no', 'name', 'idcard'))
     query = Bankcard.query
     if no:
         query = query.filter(Bankcard.no.like('{}%'.format(no)))
@@ -1035,8 +1051,8 @@ def note_clean():
                            title='clean before {}'.format(form.date.data))
 
 
-@app.route('/note/list/finished/<boolean:finished>?' +
-           'page=<int:page>&per_page=<int:per_page>',
+@app.route('/note/search/finished/<boolean:finished>' +
+           '/page/<int:page>/per_page/<int:per_page>',
            methods=['GET'])
 @login_required
 def note_search(finished, page, per_page):
@@ -1311,30 +1327,48 @@ def paybook_success_correct(bankcard_id, person_id, peroid):
     return render_template('paybook_success_correct.html', form=form)
 
 
-def _search_pay_books(person_id, item_name, peroid, negative=False):
+def _paybook_query(person_id, item_names, peroid, negative=False):
     money = func.sum(PayBook.money).label('money')
     query = db.session.query(
         PayBook.peroid,
+        PayBook.person_id.label('person'),
         Person.idcard,
         Person.name.label('person_name'),
+        PayBook.bankcard_id.label('bankcard'),
         Bankcard.no.label('bankcard_no'),
         Bankcard.name.label('bankcard_name'),
         money).join(
             Person, Person.id == PayBook.person_id).join(
                 Bankcard, Bankcard.id == PayBook.bankcard_id).filter(
-                    PayBook.item_is(item_name),
+                    PayBook.item_in(item_names),
                     PayBook.in_peroid(peroid),
                     PayBook.person_id == person_id).group_by(
                         PayBook.bankcard_id).having(
                             negative and money < 0 or money > 0)
-    return query.all()
+    query.paginate = Person.query.paginate
+    return query
 
 
-@app.route('/paybook/search', methods=['GET', 'POST'])
-def paybook_success_search():
-    pass
+@app.route('/paybook/page/<int:page>/perpage/<int:per_page>/search',
+           methods=['GET'])
+@login_required
+def paybook_search(page, per_page):
+    person_id = request.args.get('person_id')
+    peroid = None
+    try:
+        peroid = datetime.strptime(request.args.get('peroid'), '%Y-%m-%d')
+    except ValueError:
+        try:
+            peroid = datetime.strptime(request.args.get('peroid'), '%Y%d')
+        except ValueError:
+            pass
+    item_names = BooleanConverter.to_python(request.args.get('all'))\
+        and ['bank_payed', 'bank_failed'] or ['bank_payed']
+    query = _paybook_query(person_id, item_names, peroid)
+    return render_template(
+        'paybook_list.html',
+        pagination=query.paginate(page, per_page))
 # TODO add pay book search, book export
-# fail searchs, success searchs
 
 '''Response(generator,
                        mimetype="text/plain",
