@@ -5,6 +5,7 @@ from functools import wraps
 from collections import namedtuple
 from datetime import datetime, date
 from sqlalchemy import exists, and_, or_, false, func
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
@@ -18,8 +19,9 @@ from flask_principal import (
     Principal, Permission, Need, UserNeed, RoleNeed, identity_loaded,
     identity_changed, Identity)
 from models import (
-    app, db, User, Role, Address, Person, OperationLog, PersonStatusError,
-    PersonAgeError, Standard, Bankcard, Note, PayBookItem, PayBook)
+    app, db, paginate, User, Role, Address, Person, OperationLog,
+    PersonStatusError, PersonAgeError, Standard, Bankcard, Note, PayBookItem,
+    PayBook)
 from flask_wtf.csrf import CsrfProtect
 from forms import (
     Form, LoginForm, ChangePasswordForm, UserForm, AdminAddRoleForm,
@@ -1329,6 +1331,7 @@ def paybook_success_correct(bankcard_id, person_id, peroid):
 
 def _paybook_query(person_id, item_names, peroid, negative=False):
     money = func.sum(PayBook.money).label('money')
+    item = aliased(PayBookItem)
     query = db.session.query(
         PayBook.peroid,
         PayBook.person_id.label('person'),
@@ -1337,37 +1340,44 @@ def _paybook_query(person_id, item_names, peroid, negative=False):
         PayBook.bankcard_id.label('bankcard'),
         Bankcard.no.label('bankcard_no'),
         Bankcard.name.label('bankcard_name'),
+        item.name.label('item'),
         money).join(
             Person, Person.id == PayBook.person_id).join(
-                Bankcard, Bankcard.id == PayBook.bankcard_id).filter(
-                    PayBook.item_in(item_names),
-                    PayBook.in_peroid(peroid),
-                    PayBook.person_id == person_id).group_by(
-                        PayBook.bankcard_id).having(
-                            negative and money < 0 or money > 0)
-    query.paginate = Person.query.paginate
+                Bankcard, Bankcard.id == PayBook.bankcard_id).join(
+                    item, item.id == PayBook.item_id)
+    if person_id:
+        query = query.filter(PayBook.person_id == person_id)
+    if item_names:
+        query = query.filter(PayBook.item_in(item_names))
+    if peroid:
+        if isinstance(peroid, str):
+            try:
+                peroid = datetime.strptime(peroid, '%Y-%m-d').date()
+            except ValueError:
+                try:
+                    peroid = datetime.strptime(peroid, '%Y%m').date()
+                except ValueError:
+                    peroid = None
+        query = query.filter(PayBook.in_peroid(peroid))
+    query = query.group_by(
+        PayBook.bankcard_id, item.id).having(
+            negative and money < 0 or money > 0)
     return query
 
 
 @app.route('/paybook/page/<int:page>/perpage/<int:per_page>/search',
            methods=['GET'])
 @login_required
+@person_addr_filter
 def paybook_search(page, per_page):
-    person_id = request.args.get('person_id')
-    peroid = None
-    try:
-        peroid = datetime.strptime(request.args.get('peroid'), '%Y-%m-%d')
-    except ValueError:
-        try:
-            peroid = datetime.strptime(request.args.get('peroid'), '%Y%d')
-        except ValueError:
-            pass
+    person_id, peroid = map(lambda name: request.args.get(name),
+                            ('person_id', 'peroid'))
     item_names = BooleanConverter.to_python(request.args.get('all'))\
         and ['bank_payed', 'bank_failed'] or ['bank_payed']
     query = _paybook_query(person_id, item_names, peroid)
     return render_template(
         'paybook_list.html',
-        pagination=query.paginate(page, per_page))
+        pagination=paginate(query, page, per_page))
 # TODO add pay book search, book export
 
 '''Response(generator,

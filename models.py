@@ -5,11 +5,11 @@ from datetime import timedelta
 import calendar
 from hashlib import md5
 from dateutil.relativedelta import relativedelta
-from flask import Flask
+from flask import Flask, abort
 from jinja2 import Template
 from sqlalchemy import or_, and_, false, exists
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from flask_sqlalchemy import SQLAlchemy
+from flask_sqlalchemy import SQLAlchemy, Pagination
 
 app = Flask(__name__)
 db = SQLAlchemy(app)
@@ -663,11 +663,15 @@ class PayBook(db.Model):
 
     @hybrid_method
     def in_peroid(self, peroid):
+        if peroid is None:
+            return False
         m_range = self._date_range(peroid)
         return m_range[0] <= self.peroid <= m_range[1]
 
     @in_peroid.expression
     def in_peroid(cls, peroid):
+        if peroid is None:
+            return false()
         m_range = cls._date_range(peroid)
         return and_(
             cls.peroid.isnot(None),
@@ -850,6 +854,20 @@ class Note(db.Model):
         return and_(cls._end_date.isnot(None),
                     cls._end_date < datetime.datetime.now().date() +
                     timedelta(days=2))
+
+
+def paginate(query, page, per_page, error_out=True):
+    query.paginate = paginate
+    if error_out and page < 1:
+        abort(404)
+    items = query.limit(per_page).offset((page - 1) * per_page).all()
+    if not items and page != 1 and error_out:
+        abort(404)
+    if page == 1 and len(items) < per_page:
+        total = len(items)
+    else:
+        total = query.order_by(None).count()
+    return Pagination(query, page, per_page, total, items)
 
 
 def test():

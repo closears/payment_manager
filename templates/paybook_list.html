@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}pay book successed{% endblock %}
+{% block title %}pay book list{% endblock %}
 {% block content %}
 <form method='GET'>
   <div>
@@ -10,6 +10,10 @@
     <label for='peroid'>peroid</label>
     <input id='peroid' name='peroid'>
   </div>
+  <div>
+    <label for='all'>include fails</label>
+    <input type='checkbox' id='all' name='all'>
+  </div>
   <input type='submit' value='search'>
 </form>
 <table>
@@ -17,10 +21,11 @@
     <tr>
       <th>idcard</th>
       <th>person_name</th>
-      <th>item.bankcard_no</th>
+      <th>bankcard_no</th>
       <th>bankcard_name</th>
-      <th>item.money</th>
-      <th>item.peroid</th>
+      <th>item</th>
+      <th>money</th>
+      <th>peroid</th>
       <th></th>
     </tr>
   </thead>
@@ -31,6 +36,7 @@
       <td>{{ item.person_name }}</td>
       <td>{{ item.bankcard_no }}</td>
       <td>{{ item.bankcard_name }}</td>
+      <td>{{ item.item }}</td>
       <td>{{ item.money }}</td>
       <td>{{ item.peroid }}</td>
       <td></td>

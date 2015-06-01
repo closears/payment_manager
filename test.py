@@ -10,8 +10,8 @@ from flask import request, url_for
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from wtforms_alchemy import ModelForm
 from controller import app, db
-from models import (User, Role, Address, Person, Standard, Bankcard, Note,
-                    PayBookItem, PayBook)
+from models import (User, Role, Address, Person, Standard, Bankcard,
+                    Note, PayBookItem, PayBook)
 from forms import LoginForm, AdminAddRoleForm, PersonForm
 
 
@@ -1591,6 +1591,58 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         Bankcard.query.delete()
         db.session.commit()
         db.session.query(Person).delete()
+        db.session.commit()
+
+    def test_paybook_search(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        self._add_person(
+            '420525195107010010', '1951-07-01', 'test', self.admin.address_id,
+            db.session)
+        self.client.post(url_for('bankcard_add'), data=dict(
+            name='test', no='6228410770613888888'))
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard.id),
+                         data=dict(idcard='420525195107010010'))
+        upload_str = 'x|test|420525195107010010|60|x|6228410770613888888'
+        self.client.post(
+            url_for('paybook_upload', peroid=date(2011, 8, 1)),
+            data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
+        self.client.post(url_for('paybook_batch_success'), data=dict(
+            peroid=date(2011, 8, 1)))
+        self.assertEqual(60, self._sum(bankcard.paybooks, 'bank_payed'))
+        rv = self.client.get(url_for('paybook_search', page=1, per_page=2))
+        self.assertIn('6228410770613888888', rv.data)
+        rv = self.client.get(url_for(
+            'paybook_search',
+            page=1,
+            per_page=1,
+            all='yes'))
+        self.assertIn('6228410770613888888', rv.data)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(
+            url_for(
+                'paybook_success_correct',
+                person_id=person.id,
+                bankcard_id=bankcard.id,
+                peroid=date(2011, 8, 1)),
+            data=dict(money=30))
+        self.assertEqual(30, self._sum(bankcard.paybooks, 'bank_payed'))
+        self.assertEqual(30, self._sum(bankcard.paybooks, 'bank_failed'))
+        rv = self.client.get(
+            url_for(
+                'paybook_search',
+                page=1,
+                per_page=1,
+                all='yes'))
+        self.assertIn('420525195107010010', rv.data)
+        PayBook.query.delete()
+        db.session.commit()
+        Bankcard.query.delete()
+        db.session.commit()
+        Person.query.delete()
         db.session.commit()
 
 
