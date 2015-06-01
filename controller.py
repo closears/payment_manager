@@ -1359,6 +1359,9 @@ def _paybook_query(person_id, item_names, peroid, negative=False):
                 except ValueError:
                     peroid = None
         query = query.filter(PayBook.in_peroid(peroid))
+    addr_ids = map(lambda a: a.id, current_user.address.descendants)
+    addr_ids.append(current_user.address.id)
+    query = query.filter(Person.address_id.in_(addr_ids))
     query = query.group_by(
         PayBook.bankcard_id, item.id).having(
             negative and money < 0 or money > 0)
@@ -1368,7 +1371,6 @@ def _paybook_query(person_id, item_names, peroid, negative=False):
 @app.route('/paybook/page/<int:page>/perpage/<int:per_page>/search',
            methods=['GET'])
 @login_required
-@person_addr_filter
 def paybook_search(page, per_page):
     person_id, peroid = map(lambda name: request.args.get(name),
                             ('person_id', 'peroid'))
