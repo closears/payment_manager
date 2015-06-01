@@ -1184,7 +1184,10 @@ def paybook_amend(person_id, peroid):
         PayBook.item_is('bank_should_pay')).scalar() == 0
     if not payed and request.method == 'POST' and form.validate_on_submit():
         lst = []
-        form.populate_obj(lst)
+        try:
+            form.populate_obj(lst)
+        except NoResultFound:
+            abort(404)
         db.session.add_all(lst)
         OperationLog.log(db.session, current_user, person_id=person_id,
                          peroid=peroid)
@@ -1362,24 +1365,48 @@ def _paybook_query(person_id, item_names, peroid, negative=False):
     addr_ids = map(lambda a: a.id, current_user.address.descendants)
     addr_ids.append(current_user.address.id)
     query = query.filter(Person.address_id.in_(addr_ids))
-    query = query.group_by(
-        PayBook.bankcard_id, item.id).having(
-            negative and money < 0 or money > 0)
+    query = query.group_by(PayBook.bankcard_id, item.id)
+    if negative:
+        query = query.having(money < 0)
+    else:
+        query = query.having(money > 0)
     return query
 
 
-@app.route('/paybook/page/<int:page>/perpage/<int:per_page>/search',
+@app.route('/paybook/page/<int:page>/perpage/<int:per_page>/bank/search',
            methods=['GET'])
 @login_required
 def paybook_search(page, per_page):
+    '''
+    search bank pay book
+    '''
     person_id, peroid = map(lambda name: request.args.get(name),
                             ('person_id', 'peroid'))
     item_names = BooleanConverter.to_python(request.args.get('all'))\
-        and ['bank_payed', 'bank_failed'] or ['bank_payed']
+        and ['bank_should_pay', 'bank_payed', 'bank_failed'] or ['bank_payed']
     query = _paybook_query(person_id, item_names, peroid)
     return render_template(
         'paybook_list.html',
         pagination=paginate(query, page, per_page))
+
+
+@app.route('/paybook/page/<int:page>/perpage/<int:per_page>/sys/search',
+           methods=['GET'])
+@admin_required
+def paybook_sys_search(page, per_page):
+    '''
+    search for sys pay book
+    '''
+    person_id, peroid = map(lambda name: request.args.get(name),
+                            ('person_id', 'peroid'))
+    item_names = BooleanConverter.to_python(request.args.get('all')) and\
+        ['sys_should_pay', 'sys_amend'] or\
+        ['sys_should_pay']
+    query = _paybook_query(person_id, item_names, peroid, negative=True)
+    return render_template(
+        'paybook_list.html',
+        pagination=paginate(query, page, per_page))
+
 # TODO add pay book search, book export
 
 '''Response(generator,

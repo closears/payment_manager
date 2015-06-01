@@ -1638,6 +1638,56 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
                 per_page=1,
                 all='yes'))
         self.assertIn('420525195107010010', rv.data)
+        self.assertNotIn('sys_should_pay', rv.data)
+        self.assertNotIn('sys_amend', rv.data)
+        PayBook.query.delete()
+        db.session.commit()
+        Bankcard.query.delete()
+        db.session.commit()
+        Person.query.delete()
+        db.session.commit()
+
+    def test_paybook_sys_search(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.admin.address_id, db.session)
+        self.client.post(url_for('bankcard_add'), data=dict(
+            name='test', no='6228410770613888888'))
+        bankcard = Bankcard.query.filter(
+            Bankcard.no == '6228410770613888888').one()
+        self.client.post(url_for('bankcard_bind', pk=bankcard.id),
+                         data=dict(idcard='420525195107010010'))
+        upload_str = 'x|test|420525195107010010|60|x|6228410770613888888'
+        self.client.post(url_for('paybook_upload', peroid=date(2011, 8, 1)),
+                         data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
+        self.assertEqual(-60, self._sum(bankcard.paybooks, 'sys_should_pay'))
+        rv = self.client.get(url_for(
+            'paybook_sys_search',
+            page=1, per_page=2))
+        self.assertIn('60', rv.data)
+        self.assertIn('sys_should_pay', rv.data)
+        self.assertNotIn('sys_amend', rv.data)
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.client.post(url_for(
+            'paybook_amend',
+            person_id=person.id,
+            peroid=date(2011, 8, 1)),
+            data=dict(
+                bankcard='6228410770613888888',
+                money='75.00'))
+        rv = self.client.get(url_for(
+            'paybook_sys_search',
+            page=1, per_page=2))
+        self.assertNotIn('75', rv.data)
+        self.assertNotIn('sys_should_pay', rv.data)
+        self.assertNotIn('sys_amend', rv.data)
+        rv = self.client.get(url_for(
+            'paybook_sys_search',
+            all='yes', page=1, per_page=2))
+        self.assertIn('75', rv.data)
+        self.assertIn('sys_amend', rv.data)
         PayBook.query.delete()
         db.session.commit()
         Bankcard.query.delete()
