@@ -4,7 +4,8 @@ from wtforms_alchemy import model_form_factory
 from wtforms import (
     PasswordField, TextField, SelectField, DateField, TextAreaField,
     DecimalField)
-from wtforms.validators import Required, EqualTo, Regexp, NumberRange
+from wtforms.validators import (
+    Required, EqualTo, Regexp, NumberRange, Optional)
 from models import db
 from models import (
     User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard,
@@ -84,7 +85,7 @@ class AdminAddRoleForm(_AdminRoleForm):
 class AdminUserBindaddrForm(Form):
     address = SelectField(
         'address',
-        validators=[Required()],
+        validators=[Optional()],
         coerce=lambda x: x and int(x))
 
     def __init__(self):
@@ -116,6 +117,7 @@ class RoleForm(ModelForm):
 class AddressForm(ModelForm):
     parent_id = SelectField(
         unicode('parent id'),
+        validators=[Optional()],
         coerce=lambda x: x and int(x),
         default=(None, ''))
 
@@ -140,8 +142,7 @@ class PersonForm(ModelForm):
     address_id = SelectField(
         'address',
         validators=[Required()],
-        coerce=lambda x: x and int(x),
-        default=[None, ''])
+        coerce=lambda x: x and int(x))
     birthday = DateField('birthday', validators=[Required()])
 
     def __init__(self, user, **kwargs):
@@ -153,7 +154,6 @@ class PersonForm(ModelForm):
         else:
             addresses = []
         self.address_id.choices = map(lambda x: (x.id, x.name), addresses)
-        self.address_id.choices.append((None, ''))
 
     def populate_obj(self, person):
         super(PersonForm, self).populate_obj(person)
@@ -185,7 +185,6 @@ class StandardBindForm(Form):
         self.person = person
         self.standard_id.choices = map(lambda s: (s.id, s.name),
                                        Standard.query.all())
-        self.standard_id.choices.append((None, ''))
 
     def populate_obj(self, person):
         assoc = PersonStandardAssoc(
@@ -219,7 +218,10 @@ class NoteForm(ModelForm):
 
 
 class PayItemForm(ModelForm):
-    parent_id = SelectField('parent', coerce=lambda x: x and int(x))
+    parent_id = SelectField(
+        'parent',
+        validators=[Optional()],
+        coerce=lambda x: x and int(x))
 
     def __init__(self, *args, **kwargs):
         super(PayItemForm, self).__init__(*args, **kwargs)
