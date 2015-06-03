@@ -89,8 +89,15 @@ class User(db.Model):
     def password(self, val):
         self._password = md5(val).hexdigest()
 
+    @hybrid_method
     def has_role(self, rolename):
         return rolename in [role.name for role in self.roles]
+
+    @has_role.expression
+    def has_role(cls, rolename):
+        return exists().where(
+            cls.role_id == Role.id,
+            Role.name == rolename)
 
 
 class Role(db.Model):

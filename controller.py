@@ -30,7 +30,7 @@ from forms import (
     AdminRemoveRoleForm, RoleForm, PeroidForm, AddressForm, PersonForm,
     DateForm, StandardForm, StandardBindForm, BankcardForm, BankcardBindForm,
     NoteForm, PayItemForm, AmendForm, BatchSuccessFrom, FailCorrectForm,
-    SuccessCorrectForm)
+    SuccessCorrectForm, AdminUserBindaddrForm)
 
 
 def __find_obj_or_404(cls, id_field, pk):
@@ -437,6 +437,20 @@ def admin_user_remove_role(pk):
         db.session.commit()
         return 'success'
     return render_template('admin_user_remove_role.html', form=form, user=user)
+
+
+@app.route('/admin/user/<int:pk>/bindaddr', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template('{{ address_id }}')
+def admin_user_bindaddr(pk):
+    user = db.my_get_obj_or_404(User, User.id, pk)
+    form = AdminUserBindaddrForm(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        user.address_id == form.address.data
+        OperationLog.log(db.session, current_user, address_id=user.address_id)
+        db.session.commit()
+        return 'success'
+    return render_template('admin_user_bindaddr.html', form=form)
 
 
 @app.route('/admin/user/<int:pk>/detail', methods=['GET'])

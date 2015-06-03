@@ -81,6 +81,19 @@ class AdminAddRoleForm(_AdminRoleForm):
         user.roles.append(role)
 
 
+class AdminUserBindaddrForm(Form):
+    address = SelectField(
+        'address',
+        validators=[Required()],
+        coerce=lambda x: x and int(x))
+
+    def __init__(self):
+        self.address.choices = map(
+            lambda addr: (addr.id, addr.name),
+            Address.query.all())
+        self.address.choices.append((None, ''))
+
+
 class AdminRemoveRoleForm(_AdminRoleForm):
     def __init__(self, user, **kwargs):
         super(AdminRemoveRoleForm, self).__init__(user, **kwargs)

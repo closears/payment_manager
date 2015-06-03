@@ -2,12 +2,13 @@
 from models import User, Role
 from controller import app, db
 
+
 def init():
     db.create_all()
-	try:
+    try:
         user = User.query.filter(
             User.name == 'admin').one()
-    except:        
+    except:
         user = User(name='admin', password='admin')
         db.session.add(user)
         db.session.commit()
@@ -18,8 +19,9 @@ def init():
         role = Role(name='admin')
         db.session.add(role)
         db.session.commit()
-    user.roles.append(role)
-    db.session.commit()
+    if not user.has_role('admin'):
+        user.roles.append(role)
+        db.session.commit()
 
 if __name__ == '__main__':
     app.config.from_pyfile('config.cfg', silent=True)
