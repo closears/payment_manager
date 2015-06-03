@@ -567,10 +567,6 @@ def address_add():
         db.session.commit()
         OperationLog.log(db.session, current_user, address=address)
         db.session.commit()
-        if address.descendant_of(current_user.address):
-            identity_changed.send(
-                current_app._get_current_object(),
-                identity=Identity(current_user.id))
         return 'success'
     return render_template('address_edit.html', form=form)
 
