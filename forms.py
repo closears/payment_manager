@@ -140,9 +140,7 @@ class AddressForm(ModelForm):
 
 class PersonForm(ModelForm):
     address_id = SelectField(
-        'address',
-        validators=[Required()],
-        coerce=lambda x: x and int(x))
+        'address', validators=[Required()], coerce=int)
     birthday = DateField('birthday', validators=[Required()])
 
     def __init__(self, user, **kwargs):
@@ -176,7 +174,7 @@ class StandardForm(ModelForm):
 class StandardBindForm(Form):
 
     standard_id = SelectField(
-        'standard', validators=[Required()], coerce=lambda x: x and int(x))
+        'standard', validators=[Required()], coerce=int)
     start_date = DateField('start date', validators=[Required()])
     end_date = DateField('end date')
 
@@ -219,9 +217,7 @@ class NoteForm(ModelForm):
 
 class PayItemForm(ModelForm):
     parent_id = SelectField(
-        'parent',
-        validators=[Optional()],
-        coerce=lambda x: x and int(x))
+        'parent', validators=[Optional()], coerce=int)
 
     def __init__(self, *args, **kwargs):
         super(PayItemForm, self).__init__(*args, **kwargs)
@@ -230,7 +226,6 @@ class PayItemForm(ModelForm):
         if obj:
             query = query.filter(PayBookItem.id != obj.id)
         self.parent_id.choices = map(lambda a: (a.id, a.name), query.all())
-        self.parent_id.choices.append((None, ''))
 
     class Meta:
         model = PayBookItem

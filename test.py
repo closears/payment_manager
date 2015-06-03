@@ -494,12 +494,14 @@ class AddressTestCase(TestBase, AddressDataMixin):
         address = Address.query.filter(Address.name == 'test').one()
         self.assertIn(address, parent.descendants)
         self.assertEqual(address.no, '42052511xxx')
-        rv = self.client.post(url_for('address_add'), data=dict(
+        self.client.post(url_for('address_add'), data=dict(
             no='42052511yyy',
             name='test2',
             parent_id=''))
-        print(rv.data)
-        db.session.delete(address)
+        address = Address.query.filter(
+            Address.name == 'test2').one()
+        self.assertFalse(address.parent)
+        Address.query.delete()
         db.session.commit()
 
     def test_address_delete(self):
