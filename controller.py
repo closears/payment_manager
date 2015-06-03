@@ -1412,6 +1412,7 @@ def paybook_sys_search(page, per_page):
 
 @app.route('/paybook/peroid/<date:peroid>/bankgrant', methods=['GET'])
 @pay_admin_required
+@OperationLog.log_template()
 def paybook_bankgrant(peroid):
     money = func.sum(PayBook.money).label('money')
     books = db.session.query(
@@ -1455,9 +1456,11 @@ def paybook_bankgrant(peroid):
             zipf.writestr('{}.csv'.format(i + 1), '\n'.join(lines))
         f.seek(0)
         data = f.read()
+    OperationLog.log(db.session, current_user)
+    db.session.commit()
     return Response(
         (x for x in data),
-        mimetype='text/plain',
+        mimetype='application/zip',
         headers={
             'Content-Disposition': 'attachment;filename={}.csv'.format(
                 peroid)})
@@ -1466,6 +1469,7 @@ def paybook_bankgrant(peroid):
 @app.route('/paybook/min-date/<date:mindate>/max-date/<date:maxdate>/public',
            methods=['GET'])
 @admin_required
+@OperationLog.log_template()
 def paybook_pulic_report(mindate, maxdate):
     money = func.sum(PayBook.money).label('money')
     books = db.session.query(
@@ -1492,6 +1496,8 @@ def paybook_pulic_report(mindate, maxdate):
                     book.address_detail,
                     book.money)))
     lines = map(book2csv, books)
+    OperationLog.log(db.session, current_user)
+    db.session.commit()
     return Response(
         (x for x in '\n'.join(lines)),
         mimetype="text/plain",
@@ -1501,8 +1507,3 @@ def paybook_pulic_report(mindate, maxdate):
 
 
 # TODO book export
-
-'''Response(generator,
-                       mimetype="text/plain",
-                       headers={"Content-Disposition":
-                                    "attachment;filename=test.txt"})'''
