@@ -1695,6 +1695,48 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         Person.query.delete()
         db.session.commit()
 
+    def test_paybook_bankgrant(self):
+        self.client.post('/login', data=dict(name='admin', password='admin'))
+        self.client.get('/')
+        self._add_person('420525195107010010', '1951-07-01', 'test',
+                         self.admin.address_id, db.session)
+        for i in range(10):
+            self.client.post(url_for('bankcard_add'), data=dict(
+                name='test', no='622841077061388888{}'.format(i)))
+        bankcards = map(
+            lambda i: Bankcard.query.filter(
+                Bankcard.no == '622841077061388888{}'.format(i)).one(),
+            range(10))
+        for bankcard in bankcards:
+            self.client.post(url_for('bankcard_bind', pk=bankcard.id),
+                             data=dict(idcard='420525195107010010'))
+        upload_str = ('x|test|420525195107010010|60|x|6228410770613888880\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888881\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888882\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888883\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888884\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888885\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888886\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888887\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888888\n' +
+                      'x|test|420525195107010010|60|x|6228410770613888889')
+        self.client.post(url_for('paybook_upload', peroid=date(2015, 1, 1)),
+                         data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
+        person = Person.query.filter(
+            Person.idcard == '420525195107010010').one()
+        self.assertEqual(-600, self._sum(person.paybooks, 'sys_should_pay'))
+        self.assertEqual(600, self._sum(person.paybooks, 'bank_should_pay'))
+        rv = self.client.get(url_for('paybook_bankgrant',
+                                     peroid=date(2015, 1, 1)))
+        self.assert200(rv)
+        self.assertIn('6228410770613888888', rv.data)
+        PayBook.query.delete()
+        db.session.commit()
+        Bankcard.query.delete()
+        db.session.commit()
+        Person.query.delete()
+        db.session.commit()
+
 
 def run_test():
     db.create_all()

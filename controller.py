@@ -1,6 +1,8 @@
+import io
 import csv
 import codecs
 import re
+from zipfile import ZipFile
 from functools import wraps
 from collections import namedtuple
 from datetime import datetime, date
@@ -12,7 +14,7 @@ from werkzeug.datastructures import MultiDict
 import flask
 from flask import (
     render_template, session, request, flash, abort, redirect, current_app,
-    url_for)
+    url_for, Response)
 from flask_login import (
     LoginManager, current_user, login_required, login_user, logout_user)
 from flask_principal import (
@@ -60,8 +62,8 @@ class DateConverter(BaseConverter):
 
     @classmethod
     def to_url(cls, value):
-        return value.strftime('%Y-%m-%d') if isinstance(
-            value, (datetime, date)) else value
+        return value.strftime('%Y-%m-%d')\
+            if isinstance(value, (datetime, date)) else value
 
 
 class DateTimeConverter(BaseConverter):
@@ -1407,7 +1409,98 @@ def paybook_sys_search(page, per_page):
         'paybook_list.html',
         pagination=paginate(query, page, per_page))
 
-# TODO add pay book search, book export
+
+@app.route('/paybook/peroid/<date:peroid>/bankgrant', methods=['GET'])
+@pay_admin_required
+def paybook_bankgrant(peroid):
+    money = func.sum(PayBook.money).label('money')
+    books = db.session.query(
+        Person.idcard.label('idcard'),
+        Bankcard.no.label('bankcard_no'),
+        Bankcard.name.label('bankcard_name'),
+        money,
+        Person.status.label('remark')).join(
+            PayBook, Person.id == PayBook.person_id).join(
+                Bankcard, Bankcard.id == PayBook.bankcard_id).filter(
+                    PayBook.item_is('bank_should_pay'),
+                    PayBook.in_peroid(peroid)).group_by(
+                        PayBook.bankcard_id).having(
+                            money > 0).all()
+
+    def book2csv(book):
+
+        def make_no(idcard):
+            return idcard[-1] == 'X' and idcard[8:-1] + '01'\
+                or idcard[8:] + '0'
+        return ','.join(
+            map(
+                lambda x: str(x),
+                (
+                    make_no(book.idcard),
+                    book.bankcard_no,
+                    book.bankcard_name,
+                    book.money,
+                    book.remark)))
+    with io.BytesIO() as f:
+        zipf = ZipFile(f, 'w')
+        file_count = (lambda x: x / 3000 + (0 if x % 3000 == 0 else 1))(
+            len(books))
+        for i in range(file_count):
+            lines = []
+            try:
+                for j in range(3000):
+                    lines.append(book2csv(books[i*3000 + j]))
+            except IndexError:
+                pass
+            zipf.writestr('{}.csv'.format(i + 1), '\n'.join(lines))
+        f.seek(0)
+        data = f.read()
+    return Response(
+        (x for x in data),
+        mimetype='text/plain',
+        headers={
+            'Content-Disposition': 'attachment;filename={}.csv'.format(
+                peroid)})
+
+
+@app.route('/paybook/min-date/<date:mindate>/max-date/<date:maxdate>/public',
+           methods=['GET'])
+@admin_required
+def paybook_pulic_report(mindate, maxdate):
+    money = func.sum(PayBook.money).label('money')
+    books = db.session.query(
+        Person.idcard.label('idcard'),
+        Person.name.label('name'),
+        Address.name.label('address_name'),
+        Person.address_detail.label('address_detail'),
+        money).join(
+            PayBook, PayBook.person_id == Person.id).join(
+                Address, Address.id == Person.address_id).filter(
+                    PayBook.peroid >= mindate,
+                    PayBook.peroid <= maxdate).group_by(
+                        PayBook.person_id).having(
+                            money > 0)
+
+    def book2csv(book):
+        return ','.join(
+            map(
+                lambda f: str(f),
+                (
+                    book.idcard,
+                    book.name,
+                    book.address_name,
+                    book.address_detail,
+                    book.money)))
+    lines = map(book2csv, books)
+    return Response(
+        (x for x in '\n'.join(lines)),
+        mimetype="text/plain",
+        headers={"Content-Disposition":
+                 "attachment;filename=public_{}-{}.csv".format(
+                     mindate, maxdate)})
+
+
+# TODO book export
 
 '''Response(generator,
                        mimetype="text/plain",
