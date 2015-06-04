@@ -1,3 +1,4 @@
+# coding=utf-8
 from datetime import datetime
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory

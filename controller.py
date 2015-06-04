@@ -1,3 +1,4 @@
+# coding=utf-8
 import io
 import csv
 import codecs
@@ -650,6 +651,47 @@ def person_add():
     return render_template('person_edit.html', form=form)
 
 
+@app.route('/person/upload', methods=['GET', 'POST'])
+@admin_required
+@OperationLog.log_template()
+def person_upload():
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        f = request.files.get('file')
+        persons = []
+        Reader = namedtuple(
+            'Reader', 'idcard,name,address_no,address_detail,securi_no')
+
+        def idcard2birthday(idcard):
+            return datetime.strptime(idcard[6:14], '%Y%m%d').date()
+        for no, fields in enumerate(csv.reader(f)):
+            record = Reader._make(fields)
+            if not (re.match(r'^\d{17}[\d|X]$', record.idcard)
+                    and re.match(r'^[\w\W]+[号|组]$', record.address_detail)):
+                flash(('Syntax error in upload file at line:{},' +
+                       ' content:{}').format(no, fields))
+                abort(500)
+            # fields = map(lambda x: x.decode('utf-8'), fields)
+            address = db.my_get_obj_or_404(
+                Address, Address.no, record.address_no)
+            persons.append(
+                Person(
+                    idcard=record.idcard,
+                    birthday=idcard2birthday(record.idcard),
+                    name=record.name,
+                    address=address,
+                    address_detail=record.address_detail,
+                    securi_no=record.securi_no,
+                    personal_wage=0,
+                    create_by=current_user
+                ).reg())
+        OperationLog.log(db.session, current_user)
+        db.session.add_all(persons)
+        db.session.commit()
+        return 'success'
+    return render_template('upload.html', form=form)
+
+
 @app.route('/person/<int:pk>/delete', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
@@ -1144,7 +1186,7 @@ def paybook_upload(peroid):
         for line in file:
             line = line.replace(codecs.BOM_UTF8, '').replace('|', ',').rstrip(
                 ',')
-            fields = map(lambda x: codecs.decode(x, 'utf-8'),
+            fields = map(lambda x: x.decode('utf-8'),
                          csv.reader([line]).next())
             record = Reader._make(fields)
             if not validate(record):

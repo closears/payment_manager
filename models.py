@@ -313,13 +313,21 @@ class Person(db.Model):
         else:
             self._personal_wage = val
 
+    @personal_wage.expression
+    def personal_wage(cls):
+        return cls._personal_wage.label('personal_wage')
+
     @hybrid_property
     def birthday(self):
         return self._birthday
 
     @birthday.setter
     def birthday(self, val):
-        self._birthday = val
+        if isinstance(val, str):
+            self._birthday = datetime.datetime.strptime(
+                val, '%Y-%m-%d').date()
+        else:
+            self._birthday = val
 
     @property
     def earliest_retire_day(self):
