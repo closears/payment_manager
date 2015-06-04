@@ -446,7 +446,7 @@ def admin_user_bindaddr(pk):
     user = db.my_get_obj_or_404(User, User.id, pk)
     form = AdminUserBindaddrForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        user.address_id == form.address.data
+        user.address_id = form.address.data
         OperationLog.log(db.session, current_user, address_id=user.address_id)
         db.session.commit()
         return 'success'
@@ -456,11 +456,7 @@ def admin_user_bindaddr(pk):
 @app.route('/admin/user/<int:pk>/detail', methods=['GET'])
 @admin_required
 def admin_user_detail(pk):
-    try:
-        user = User.query.filter(User.id == pk).one()
-    except NoResultFound:
-        flash("The user with pk{} was't find".format(pk))
-        abort(404)
+    user = db.my_get_obj_or_404(User, User.id, pk)
     return render_template('admin_user_detail.html', user=user)
 
 
@@ -617,10 +613,18 @@ def address_edit(pk):
     methods=['GET'])
 @login_required
 def address_search(page, per_page):
-    name = lambda x: (x != 'None' and x or None)(request.args.get('name'))
-    query = Address.query.filter(
-        Address.id.in_([a.id for a in current_user.address.descendants]),
-        Address.name.like(unicode('{}%').format(name)))
+    name = (lambda x: x != 'None' and x or None)(request.args.get('name'))
+    query = Address.query
+    if current_user.address:
+        address_ids = map(lambda a: a.id, current_user.address.descendants)
+        address_ids.append(current_user.address.id)
+        print('============', name)
+        query = query.filter(Address.id.in_(address_ids))
+    else:
+        query = query.filter(false())
+    if name:
+        query = query.filter(
+            Address.name.like(unicode('{}%'.format(name))))
     return render_template(
         'address_search.html', pagination=query.paginate(page, per_page))
 

@@ -143,7 +143,7 @@ class Address(db.Model):
         )
 
     def __str__(self):
-        return unicode("{name}".format(name=self.name))
+        return "{name}".format(name=self.name)
 
     @property
     def descendants(self):
@@ -402,6 +402,10 @@ class Person(db.Model):
     @hybrid_property
     def status(self):
         return self._status
+
+    @status.expression
+    def status(cls):
+        return cls._status.label('status')
 
     @hybrid_property
     def can_reg(self):

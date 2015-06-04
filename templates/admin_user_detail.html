@@ -1,12 +1,18 @@
 {% extends 'base.html' %}
 {% block title %}user detail {% endblock %}
 {% block content %}
-<p><span>name:</span><span>{{ user.name }}</span></p>
 {% if user.roles %}
 <ul>
-  {% for role in user.roles %}
-  <li>{{ role.name }}</li>
-  {% endfor %}
+  <li><dt>name</dt><dd>{{ user.name }}</dd></li>
+  <li><dt>address</dt><dd>{{ user.address.name }}</dd></li>
+    <ul>
+      <dt>roles</dt>
+      <dd>
+	{% for role in user.roles %}
+	<li>{{ role.name }}</li>
+	{% endfor %}
+      </dd>
+    </ul>
 </ul>
 {% endif %}
 {% endblock %}

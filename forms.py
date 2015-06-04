@@ -88,11 +88,12 @@ class AdminUserBindaddrForm(Form):
         validators=[Optional()],
         coerce=lambda x: x and int(x))
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super(AdminUserBindaddrForm, self).__init__(*args, **kwargs)
         self.address.choices = map(
             lambda addr: (addr.id, addr.name),
             Address.query.all())
-        self.address.choices.append((None, ''))
+        self.address.choices.append(('', ''))
 
 
 class AdminRemoveRoleForm(_AdminRoleForm):
@@ -101,7 +102,7 @@ class AdminRemoveRoleForm(_AdminRoleForm):
         if user.roles:
             self.role.choices = map(lambda x: (x.id, x.name), user.roles)
         else:
-            self.role.choices = [(-1, '')]
+            self.role.choices = [(None, '')]
 
     def populate_obj(self, user):
         if self.role.data > 0:
@@ -119,20 +120,18 @@ class AddressForm(ModelForm):
         unicode('parent id'),
         validators=[Optional()],
         coerce=lambda x: x and int(x),
-        default=(None, ''))
+        default=None)
 
     def __init__(self, **kwargs):
         super(AddressForm, self).__init__(**kwargs)
         address = kwargs.get('obj', None)
-        if address and address.parent:
+        if address:
             # self can not be self's parent
             query = Address.query.filter(Address.id != address.id)
-            if address.descendants:
-                query = query.filter(~Address.id.in_(address.descendants))
         else:
             query = Address.query
         self.parent_id.choices = map(lambda x: (x.id, x.name), query.all())
-        self.parent_id.choices.append((None, ''))
+        self.parent_id.choices.append(('', ''))
 
     class Meta:
         model = Address
@@ -142,6 +141,9 @@ class PersonForm(ModelForm):
     address_id = SelectField(
         'address', validators=[Required()], coerce=int)
     birthday = DateField('birthday', validators=[Required()])
+    personal_wage = DecimalField(
+        'personal wage', validators=[NumberRange(min=0.00, max=10000)],
+        places=7, rounding=2)
 
     def __init__(self, user, **kwargs):
         super(PersonForm, self).__init__(**kwargs)
@@ -161,8 +163,7 @@ class PersonForm(ModelForm):
 
     class Meta:
         model = Person
-        only = ['idcard', 'name',  'address_detail',
-                'securi_no', 'personal_wage']
+        only = ['idcard', 'name',  'address_detail', 'securi_no']
 
 
 class StandardForm(ModelForm):
