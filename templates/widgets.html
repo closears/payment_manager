@@ -5,6 +5,9 @@
 
 {% macro render_pagination(pagination) %}
 <div id='pagination'>
+  {% if pagination.has_prev %}
+  <a href='{{ url_for_other_page(pagination.page - 1, per_page=pagination.per_page) }}'>Prev</a>
+  {% endif %}
   {%- for page in pagination.iter_pages() %}
   {% if page %}
   {% if page != pagination.page %}

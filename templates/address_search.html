@@ -22,7 +22,7 @@
     <tr>
       <td>{{ item.no }}</td>
       <td>{{ item.name }}</td>
-      <td>{{ item.parent|default('None') }}</td>
+      <td>{{ item.parent.name|default('None') }}</td>
       <td>
 	{% if current_user.has_role('admin') %}
 	<a href='{{ url_for("address_delete",pk=item.id) }}'>delete</a>
@@ -34,7 +34,7 @@
   </tbody>
 </table>
 {% from 'widgets.html' import render_pagination %}
-{% if pagination.has_next %}
+{% if pagination.has_next or pagination.has_prev %}
 {{ render_pagination(pagination) }}
 {% endif %}
 {% endblock %}

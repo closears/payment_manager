@@ -619,7 +619,6 @@ def address_search(page, per_page):
     if current_user.address:
         address_ids = map(lambda a: a.id, current_user.address.descendants)
         address_ids.append(current_user.address.id)
-        print('============', name)
         query = query.filter(Address.id.in_(address_ids))
     else:
         query = query.filter(false())
