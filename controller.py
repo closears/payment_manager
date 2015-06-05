@@ -658,6 +658,8 @@ def person_upload():
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         f = request.files.get('file')
+        if f.read(len(codecs.BOM_UTF8)) != codecs.BOM_UTF8:
+            f.seek(0)
         persons = []
         Reader = namedtuple(
             'Reader', 'idcard,name,address_no,address_detail,securi_no')
@@ -1169,10 +1171,11 @@ def pay_item_detail(pk):
 def paybook_upload(peroid):
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        file = request.files['file']
+        f = request.files['file']
+        if f.read(len(codecs.BOM_UTF8)) != codecs.BOM_UTF8:
+            f.seek(0)
         Reader = namedtuple('Reader',
                             'securi_no,name,idcard,money,village_no,bankcard')
-        line_no = 1
 
         def validate(record):
             if not re.match(r'^(?:(?:\d{19})|(?:\d{2}-\d{15}))[\w\W]*$',
@@ -1183,9 +1186,8 @@ def paybook_upload(peroid):
             if not re.match(r'^\d+(?:\.\d{2})?$', record.money):
                 return False
             return True
-        for line in file:
-            line = line.replace(codecs.BOM_UTF8, '').replace('|', ',').rstrip(
-                ',')
+        for line_no, line in enumerate(f):
+            line = line.replace('|', ',').rstrip(',')
             fields = map(lambda x: x.decode('utf-8'),
                          csv.reader([line]).next())
             record = Reader._make(fields)
@@ -1213,7 +1215,6 @@ def paybook_upload(peroid):
             db.session.add_all(PayBook.create_tuple(
                 person, item1, item2, bankcard, bankcard, float(record.money),
                 peroid, current_user))
-            line_no += 1
         OperationLog.log(db.session, current_user, peroid=peroid)
         db.session.commit()
         return 'success'
