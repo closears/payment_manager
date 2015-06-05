@@ -15,11 +15,6 @@
       <label for='end_date'>end date</label>
       <input id='end_date' name='end_date'>
     </div>
-    <input type='hidden' name='page' value='1'>
-    <div>
-      <label for='per_page'>per page</label>
-      <input id='per_page' name='per_page'>
-    </div>
     <input type='submit' value='search'>
   </form>
 </div>
@@ -46,7 +41,7 @@
   </table>
 </div>
 {% from 'widgets.html' import render_pagination as paginate %}
-{% if pagination.has_next %}
+{% if pagination.has_next or paginationg.has_prev %}
 {{ paginate(pagination) }}
 {% endif %}
 {% endblock %}

@@ -15,11 +15,6 @@
       <label for='operator_id'>operator id</label>
       <input id='operator_id' name='operator_id'>
     </div>
-    <input type='hidden' name='page' value='1'>
-    <div>
-      <label for='per_page'>per page</label>
-      <input id='per_page' name='per_page'>
-    </div>
     <input type='submit' value='search'>
   </form>
 </div>
@@ -46,7 +41,7 @@
   </table>
 </div>
 {% from 'widgets.html' import render_pagination as paginate %}
-{% if pagination.has_next %}
+{% if pagination.has_next or pagination.has_prev %}
 {{ paginate(pagination) }}
 {% endif %}
 {% endblock %}

@@ -7,11 +7,6 @@
       <label for='name'>begin of name</label>
       <input id='name' name='name'>
     </div>
-    <input type='hidden' name='page' value='1'>
-    <div>
-      <label for='per_page'>per page</label>
-      <input id='per_page' name='per_page'>
-    </div>
     <input type='submit' value='search'>
   </form>
 </div>
@@ -48,7 +43,7 @@
   </table>
 </div>
 {% from 'widgets.html' import render_pagination as paginate %}
-{% if pagination.has_next %}
+{% if pagination.has_next or pagination.has_prev %}
 {{ paginate(pagination) }}
 {% endif %}
 {% endblock %}

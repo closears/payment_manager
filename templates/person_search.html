@@ -14,11 +14,6 @@
     <label for='address'>begin of address name</label>
     <input id='address' name='address'>
   </div>
-  <input type='hidden' name='page' value='1'>
-  <div>
-    <label for='per_page'>per page</label>
-    <input id='per_page' name='per_page'>
-  </div>
   <input type='submit' value='search'>
 </form>
 <table>
@@ -42,7 +37,7 @@
   </tbody>
 </table>
 {% from 'widgets.html' import render_pagination %}
-{% if pagination.has_next %}
+{% if pagination.has_next or pagination.has_prev %}
 {{ render_pagination(pagination) }}
 {% endif %}
 {% endblock %}
