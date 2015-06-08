@@ -856,7 +856,7 @@ def person_resume_reg(pk):
     return render_template('confirm.html', form=form, title='person resume')
 
 
-@app.route('/person/<int:pk>/address_change', methods=['GET', 'POST'])
+@app.route('/person/<int:pk>/update', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
 @OperationLog.log_template('{{person.id }},{{ person.idcard }},' +
@@ -878,8 +878,7 @@ def person_update(pk):
 @person_addr_filter
 def person_search(page, per_page):
     idcard, name, address = map(
-        lambda x: (lambda y: y != 'None' and y or None)(request.args.get(x)),
-        ('idcard', 'name', 'address'))
+        lambda x: request.args.get(x), ('idcard', 'name', 'address'))
     query = Person.query
     if idcard:
         query = query.filter(Person.idcard.like('{}%'.format(idcard)))
@@ -1013,7 +1012,7 @@ def bankcard_update(pk):
     return render_template('bankcard_edit.html', form=form)
 
 
-@app.route('/bankcard/page/<int:page>/per-page/<int:per_page>/search',
+@app.route('/bankcard/page/<int:page>/perpage/<int:per_page>/search',
            methods=['GET'])
 @person_addr_filter
 @login_required
@@ -1606,10 +1605,10 @@ def paybook_check():
         def generator():
             yield 'bankcards:'
             for bankcard in unreg_bankcard:
-                yield bankcard
+                yield bankcard + '\n'
             yield 'idcards:'
             for idcard in unreg_idcard:
-                yield idcard
+                yield idcard + '\n'
         return Response(
             generator(),
             mimetype="text/plain",
