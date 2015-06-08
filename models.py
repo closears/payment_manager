@@ -521,12 +521,10 @@ class Bankcard(db.Model):
     create_time = db.Column(db.DateTime, default=datetime.datetime.now)
 
     def __repr__(self):
-        return "<Bankcard(no='{no}',name='{name}',owner={owner},\
-        create_time={create_time})>".format(
+        return "<Bankcard(no='{no}',name='{name}',owner_id={owner})>".format(
             no=self.no,
             name=self.name,
-            owner=self.owner.__repr__(),
-            create_time=self.create_time.__repr__()
+            owner_id=self.owner and self.owner.id or None
         )
 
     def __str__(self):

@@ -417,6 +417,9 @@ def admin_user_add_role(pk):
         form.populate_obj(user)
         OperationLog.log(db.session, current_user, user=user, form=form)
         db.session.commit()
+        identity_changed.send(
+            current_app._get_current_object(),
+            identity=Identity(user.id))
         return 'success'
     return render_template('admin_user_add_role.html', form=form, user=user)
 
@@ -462,15 +465,19 @@ def admin_user_detail(pk):
 
 
 @app.route(
-    '/admin/user/page/<int:page>/per_page/<int:per_page>/search' +
-    '?name=<regex(r"(:?[a-zA-Z][a-zA-Z_0-9]*)?"):name>',
+    '/admin/user/page/<int:page>/perpage/<int:per_page>/search',
     methods=['GET']
 )
 @admin_required
-def admin_user_search(name, page, per_page):
-    pagination = User.query.filter(
-        User.name.like('{}%'.format(name))).paginate(page, per_page)
-    return render_template('admin_user_search.html', pagination=pagination)
+def admin_user_search(page, per_page):
+    name = request.args.get('name')
+    if name:
+        query = User.query.filter(
+            User.name.like('{}%'.format(name)))
+    else:
+        query = User.query
+    return render_template(
+        'admin_user_search.html', pagination=query.paginate(page, per_page))
 
 
 @app.route('/admin/role/add', methods=['GET', 'POST'])
@@ -1562,4 +1569,50 @@ def paybook_pulic_report(mindate, maxdate):
                      mindate, maxdate)})
 
 
-# TODO book export
+@app.route('/paybook/check', methods=['GET', 'POST'])
+@pay_admin_required
+def paybook_check():
+    form = Form(request.form)
+    if request.method == 'POST' and form.validate_on_submit():
+        f = request.files.get('file')
+        if f.read(len(codecs.BOM_UTF8)) != codecs.BOM_UTF8:
+            f.seek(0)
+        Reader = namedtuple(
+            'Reader', 'securi_no,name,idcard,money,village_no,bankcard')
+        bankcard_regex = re.compile(r'^((?:\d{19})|(?:\d{2}-\d{15})).*$')
+
+        def validator(record):
+            if not re.match(r'^\d{17}[\d|X]$', record.idcard):
+                return False
+            if not bankcard_regex.match(record.bankcard):
+                return False
+            return True
+        unreg_bankcard, unreg_idcard = [], []
+        for no, fields in enumerate(csv.reader(f, delimiter='|')):
+            record = Reader._make(fields)
+            if not validator(record):
+                flash('synatx error in line:{}'.format(no + 1))
+                abort(500)
+            bankcard_no = bankcard_regex.match(record.bankcard).group(1)
+            try:
+                Bankcard.query.filter(Bankcard.no == bankcard_no).one()
+            except NoResultFound:
+                unreg_bankcard.append(bankcard_no)
+            try:
+                Person.query.filter(Person.idcard == record.idcard).one()
+            except NoResultFound:
+                unreg_idcard.append(record.idcard)
+
+        def generator():
+            yield 'bankcards:'
+            for bankcard in unreg_bankcard:
+                yield bankcard
+            yield 'idcards:'
+            for idcard in unreg_idcard:
+                yield idcard
+        return Response(
+            generator(),
+            mimetype="text/plain",
+            headers={"Content-Disposition":
+                     "attachment;filename=unreged.txt"})
+    return render_template('upload.html', form=form)
