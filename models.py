@@ -801,7 +801,7 @@ class OperationLog(db.Model):
             template_name = str(template_key)
         template = cls.__log_templates.get(template_name, None)
         return session.add(cls(
-            operator=operator,
+            operator_id=operator.id,
             method=method,
             remark=template.render(**kwargs) if template else None
         ))
