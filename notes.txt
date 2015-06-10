@@ -17,4 +17,11 @@
 	某期及某人某卡成功修正
 		用于某银行卡批量成功时忘记标记失败，或者银行卡当期部分金额失败修正。
 		输入修正金额，对应期银行已付减少对于值，银行失败增加对应值。
-	
+在xp下，httpd24不能用fcgid部署flask，会报错：overlap response,可能是一个bug.不过，用wsgi部署则没问题。
+而且，今天发现了http://www.lfd.uci.edu/~gohlke/pythonlibs/，这个网站真是良心网站，下载wsgi不用翻墙了。下载下来的文件是whl格式，一开始不知怎么打开，后来用7-zip打开了，原来是一种压缩文件。
+近期计划：
+写简单的前端
+远期计划
+慢慢写文档
+重写OperationLog功能，自动记录model的值变化
+写一个paybook 的assoc class,抽象结转，归集，清零等操作
