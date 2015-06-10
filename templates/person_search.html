@@ -23,6 +23,7 @@
       <td>name</td>
       <td>address</td>
       <td>status</td>
+      <td>operator</td>
     </th>
   </thead>
   <tbody>
@@ -32,6 +33,9 @@
       <td>{{ item.name }}</td>
       <td>{{ item.address.name }}</td>
       <td>{{ item.status }}</td>
+      <td>
+	<a href='{{ url_for("person_update", pk=item.id) }}'>update</a>
+      </td>
     </tr>
     {% endfor %}
   </tbody>

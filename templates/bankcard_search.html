@@ -22,6 +22,7 @@
       <td>no</td>
       <td>name</td>
       <td>owner idcard</td>
+      <td>operator</td>
     </th>
   </thead>
   <tbody>
@@ -30,6 +31,9 @@
       <td>{{ item.no }}</td>
       <td>{{ item.name }}</td>
       <td>{{ item.owner.idcard }}</td>
+      <td>
+	<a href='{{ url_for("bankcard_update", pk=item.id ) }}'>update</a>
+      </td>
     </tr>
     {% endfor %}
   </tbody>

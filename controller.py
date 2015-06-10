@@ -15,7 +15,7 @@ from werkzeug.datastructures import MultiDict
 import flask
 from flask import (
     render_template, session, request, flash, abort, redirect, current_app,
-    url_for, Response, url_for)
+    url_for, Response)
 from flask_login import (
     LoginManager, current_user, login_required, login_user, logout_user)
 from flask_principal import (
@@ -189,8 +189,9 @@ def page_not_found(error):
 
 @app.errorhandler(500)
 def page_error(error):
-    try
-        session.get('back_url', None) or session.update(back_url=url_for('index'))
+    try:
+        session.get('back_url', None) or session.update(
+            back_url=url_for('index'))
     except Exception:
         pass
     return render_template('500.html'), 500
@@ -199,7 +200,8 @@ def page_error(error):
 @app.errorhandler(403)
 def page_forbiden(error):
     try:
-        session.get('back_url', None) or session.update(back_url=url_for('index'))
+        session.get('back_url', None) or session.update(
+            back_url=url_for('index'))
     except Exception:
         pass
     return render_template('403.html'), 403
@@ -235,6 +237,7 @@ def lst2csv(lst):
 @app.template_global()
 def url_for_other_page(page, per_page):
     args = request.view_args.copy()
+    args.update(**request.args)
     args['page'] = page,
     args['per_page'] = per_page
     return url_for(request.endpoint, **args)
@@ -265,7 +268,8 @@ def login():
     if request.method == 'POST' and form.validate():
         token = User()
         form.populate_obj(token)
-        redirect_url = '/login?next={}'.format(request.args.get('next') or url_for('index'))
+        redirect_url = '/login?next={}'.format(
+            request.args.get('next') or url_for('index'))
         try:
             user = User.query.filter(User.name == token.name).one()
             if token != user:
@@ -997,10 +1001,11 @@ def bankcard_bind(pk):
             flash(unicode('the condition({}) is too blurred').format(
                 form.idcard.data))
             abort(500)
-        bankcard.owner = person
+        bankcard.owner_id = person.id
         OperationLog.log(db.session, current_user, bankcard=bankcard)
         db.session.commit()
         return 'success'
+    return render_template('bankcard_bind.html', form=form)
 
 
 @app.route('/bankcard/<int:pk>/update', methods=['GET', 'POST'])
