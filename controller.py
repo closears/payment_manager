@@ -15,7 +15,7 @@ from werkzeug.datastructures import MultiDict
 import flask
 from flask import (
     render_template, session, request, flash, abort, redirect, current_app,
-    url_for, Response)
+    url_for, Response, url_for)
 from flask_login import (
     LoginManager, current_user, login_required, login_user, logout_user)
 from flask_principal import (
@@ -183,19 +183,25 @@ def on_identity_loaded(sender, identity):
 
 @app.errorhandler(404)
 def page_not_found(error):
-    session.get('back_url', None) or session.update(back_url='/')
+    session.get('back_url', None) or session.update(back_url=url_for('index'))
     return render_template('404.html'), 404
 
 
 @app.errorhandler(500)
 def page_error(error):
-    session.get('back_url', None) or session.update(back_url='/')
+    try
+        session.get('back_url', None) or session.update(back_url=url_for('index'))
+    except Exception:
+        pass
     return render_template('500.html'), 500
 
 
 @app.errorhandler(403)
 def page_forbiden(error):
-    session.get('back_url', None) or session.update(back_url='/')
+    try:
+        session.get('back_url', None) or session.update(back_url=url_for('index'))
+    except Exception:
+        pass
     return render_template('403.html'), 403
 
 
