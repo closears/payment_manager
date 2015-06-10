@@ -265,7 +265,7 @@ def login():
     if request.method == 'POST' and form.validate():
         token = User()
         form.populate_obj(token)
-        redirect_url = '/login?next={}'.format(request.args.get('next') or '/')
+        redirect_url = '/login?next={}'.format(request.args.get('next') or url_for('index'))
         try:
             user = User.query.filter(User.name == token.name).one()
             if token != user:
