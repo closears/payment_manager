@@ -1565,7 +1565,7 @@ def paybook_bankgrant():
 @app.route('/paybook/public', methods=['GET'])
 @admin_required
 @OperationLog.log_template()
-def paybook_pulic_report():
+def paybook_public_report():
     money = func.sum(PayBook.money).label('money')
     query = db.session.query(
         Person.idcard.label('idcard'),

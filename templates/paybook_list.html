@@ -55,9 +55,11 @@
     <label for='bankgrant_peroid'>peroid</label>
     <input id='bankgrant_peroid' name='peroid'>
   </div>
-  <input type='submit' value='submit'>
+  <input type='submit' value='download'>
 </form>
-<form method='GET' action=''>
+<form method='GET' action='{{ url_for("paybook_public_report") }}'>
+  <h2>public</h2>
+  <input type='submit' value='download'>
 </form>
 {% endif %}
 {% endblock %}
