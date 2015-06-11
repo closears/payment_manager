@@ -483,7 +483,7 @@ def admin_user_search(page, per_page):
     name = request.args.get('name')
     if name:
         query = User.query.filter(
-            User.name.like('{}%'.format(name)))
+            User.name.like('{}%'.decode('utf-8').format(name)))
     else:
         query = User.query
     return render_template(
@@ -641,7 +641,7 @@ def address_search(page, per_page):
         query = query.filter(false())
     if name:
         query = query.filter(
-            Address.name.like(unicode('{}%'.format(name))))
+            Address.name.like('{}%'.decode('utf-8').format(name)))
     return render_template(
         'address_search.html', pagination=query.paginate(page, per_page))
 
@@ -891,13 +891,15 @@ def person_search(page, per_page):
         lambda x: request.args.get(x), ('idcard', 'name', 'address'))
     query = Person.query
     if idcard:
-        query = query.filter(Person.idcard.like('{}%'.format(idcard)))
+        query = query.filter(
+            Person.idcard.like('{}%'.decode('utf-8').format(idcard)))
     if name:
-        query = query.filter(Person.name.like('{}%'.format(name)))
+        query = query.filter(
+            Person.name.like('{}%'.decode('utf-8').format(name)))
     if address:
         stmt = exists().where(and_(
             Person.address_id == Address.id,
-            Address.name.like('{}%'.format(address))))
+            Address.name.like('{}%'.decode('utf-8').format(address))))
         query = query.filter(stmt)
     return render_template('person_search.html',
                            pagination=query.paginate(page, per_page))
@@ -1033,13 +1035,16 @@ def bankcard_search(page, per_page):
         ('no', 'name', 'idcard'))
     query = Bankcard.query
     if no:
-        query = query.filter(Bankcard.no.like('{}%'.format(no)))
+        query = query.filter(
+            Bankcard.no.like('{}%'.decode('utf-8').format(no)))
     if name:
-        query = query.filter(Bankcard.name.like('{}%'.format(name)))
+        query = query.filter(
+            Bankcard.name.like('{}%'.decode('utf-8').format(name)))
     if idcard:
         stmt = exists().where(and_(
                               Bankcard.owner_id == Person.id,
-                              Person.idcard.like('{}%'.format(idcard))))
+                              Person.idcard.like(
+                                  '{}%'.decode('utf-8').format(idcard))))
         query = query.filter(stmt)
     return render_template('bankcard_search.html',
                            pagination=query.paginate(page, per_page))
@@ -1440,7 +1445,7 @@ def _paybook_query(person_id, item_names, peroid, negative=False):
     addr_ids = map(lambda a: a.id, current_user.address.descendants)
     addr_ids.append(current_user.address.id)
     query = query.filter(Person.address_id.in_(addr_ids))
-    query = query.group_by(PayBook.bankcard_id, item.id)
+    query = query.group_by(PayBook.bankcard_id, item.id, PayBook.peroid)
     if negative:
         query = query.having(money < 0)
     else:

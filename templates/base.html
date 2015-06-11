@@ -6,13 +6,36 @@
     <title>{% block title %}{% endblock %}</title>
     {% block css %}
     <link rel="stylesheet" href="{{ url_for('static',filename='css/main.css') }}"/>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.css') }}"/>
     {% endblock %}
     {% endblock %}
   </head>
   <body>
-    <div id="content">{% block content %}{% endblock %}</div>
-    <div id="footer">
-      {% block footer %}&copy; Copyright 2015 by zhaozengguang.{% endblock %}
+    <div class='row-fluid'>
+      <div id='menu' class='span2'>
+	<h2>Menu</h2>
+	<ul>
+	  {% if current_user.has_role('admin') %}
+	  <li>
+	    <a href='{{ url_for("person_add") }}'>person_add</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("bankcard_add", page=1, per_page=10) }}'>bankcard add</a>
+	  </li>
+	  {% endif %}
+	  <li>
+	    <a href='{{ url_for("person_search", page=1, per_page=10) }}'>person search</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("bankcard_search", page=1, per_page=10) }}'>bankcard search</a>
+	</ul>
+      </div>
+      <div id="content" class='span10'>
+	{% block content %}{% endblock %}
+      </div>
+      <div id="footer" class='span12'>
+	{% block footer %}&copy; Copyright 2015 by zhaozengguang.{% endblock %}
+      </div>
     </div>
     {% block jslib %}
     <script src="{{ url_for('static',filename='javascript/jquery.min.js') }}"></script>

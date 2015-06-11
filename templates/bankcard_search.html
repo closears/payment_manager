@@ -16,14 +16,14 @@
   </div>
   <input type='submit' value='search'>
 </form>
-<table>
+<table class='table'>
   <thead>
-    <th>
-      <td>no</td>
-      <td>name</td>
-      <td>owner idcard</td>
-      <td>operator</td>
-    </th>
+    <tr>
+      <th>no</th>
+      <th>name</th>
+      <th>owner idcard</th>
+      <th>operator</th>
+    </tr>
   </thead>
   <tbody>
     {% for item in pagination.items %}
@@ -32,7 +32,11 @@
       <td>{{ item.name }}</td>
       <td>{{ item.owner.idcard }}</td>
       <td>
+	{% if current_user.has_role('admin') %}
 	<a href='{{ url_for("bankcard_update", pk=item.id ) }}'>update</a>
+	{% else %}
+	update
+	{% endif %}
       </td>
     </tr>
     {% endfor %}
