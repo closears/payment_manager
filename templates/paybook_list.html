@@ -3,15 +3,15 @@
 {% block content %}
 <form method='GET'>
   <div>
-    <label for='person_id'>person id</label>
-    <input id='person_id' name='person_id'>
+    <label for='person_idcard'>person idcard</label>
+    <input id='person_idcard' name='person_idcard'>
   </div>
   <div>
     <label for='peroid'>peroid</label>
     <input id='peroid' name='peroid'>
   </div>
   <div>
-    <label for='all'>include fails</label>
+    <label for='all'>all</label>
     <input type='checkbox' id='all' name='all'>
   </div>
   <input type='submit' value='search'>
@@ -47,5 +47,17 @@
 {% from 'widgets.html' import render_pagination %}
 {% if pagination.has_next or pagination.has_prev %}
 {{ render_pagination(pagination) }}
+{% endif %}
+{% if current_user %}
+<form method='GET' action='{{ url_for("paybook_bankgrant") }}'>
+  <h2>paybook bank grant</h2>
+  <div>
+    <label for='bankgrant_peroid'>peroid</label>
+    <input id='bankgrant_peroid' name='peroid'>
+  </div>
+  <input type='submit' value='submit'>
+</form>
+<form method='GET' action=''>
+</form>
 {% endif %}
 {% endblock %}

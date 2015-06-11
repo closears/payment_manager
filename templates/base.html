@@ -13,22 +13,75 @@
   <body>
     <div class='row-fluid'>
       <div id='menu' class='span2'>
-	<h2>Menu</h2>
 	{% if current_user.is_authenticated() %}
+	<h2>Menu</h2>
 	<ul>
 	  {% if current_user.has_role('admin') %}
 	  <li>
 	    <a href='{{ url_for("person_add") }}'>person_add</a>
 	  </li>
 	  <li>
+	    <a href='{{ url_for("person_batch_normal") }}'>person batch normal</a> 
+	  </li>
+	  <li>
 	    <a href='{{ url_for("bankcard_add") }}'>bankcard add</a>
 	  </li>
+	  <li>
+	    <a href='{{ url_for("admin_add_user") }}'>add user</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("admin_user_search", page=1, per_page=10) }}'>user search</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("admin_role_add") }}'>role add</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("standard_add") }}'>standard add</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("admin_log_search", page=1, per_page=10) }}'>log search</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("address_add") }}'>address add</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("note_clean") }}'>note clean</a>
+	  </li>
 	  {% endif %}
+	  {% if current_user.has_role('pay_admin') %}
+	  <li>
+	    <a href='{{ url_for("payitem_add") }}'>pay item add</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("paybook_batch_success") }}'>paybook batch success</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("paybook_check") }}'>paybook check</a>
+	  </li>
+	  {% endif %}
+	  <li>
+	    <a href='{{ url_for("note_add") }}'>note add</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("note_search", page=1, per_page=10) }}'>note search</a>
+	  </li>
 	  <li>
 	    <a href='{{ url_for("person_search", page=1, per_page=10) }}'>person search</a>
 	  </li>
 	  <li>
 	    <a href='{{ url_for("bankcard_search", page=1, per_page=10) }}'>bankcard search</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("address_search", page=1, per_page=10) }}'>address search</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("paybook_search", page=1, per_page=10) }}'>paybook search</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("paybook_sys_search", page=1, per_page=10) }}'>sys paybook search</a>
+	  </li>
+	  <li>
+	    <a href='{{ url_for("user_changepassword") }}'>change password</a>
 	  </li>
 	  <li>
 	    <a href='{{ url_for("logout") }}'>logout</a>

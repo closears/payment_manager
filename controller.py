@@ -100,7 +100,7 @@ class BooleanConverter(BaseConverter):
 
     @classmethod
     def to_python(cls, value):
-        return value == 'yes'
+        return value in ('yes', 'True', 'true', 'on')
 
     @classmethod
     def to_url(cls, value):
@@ -297,7 +297,7 @@ def logout():
 @app.route('/user/changepassword', methods=['GET', 'POST'])
 @login_required
 @OperationLog.log_template()
-def user_changpassword():
+def user_changepassword():
     form = ChangePasswordForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         user = User.query.filter(User.id == current_user.id).one()
@@ -533,14 +533,24 @@ def admin_role_remove(pk):
     methods=['GET'])
 @admin_required
 def admin_log_search(page, per_page):
-    operator_id = request.args.get('operator_id')
+    operator_name = request.args.get('operator_name')
     start_date, end_date = map(
-        lambda x: datetime.strptime(request.args.get(x), '%Y-%m-%d').date(),
+        lambda x: (lambda y: y and datetime.strptime(y, '%Y-%m-%d').date())(
+            request.args.get(x)),
         ('start_date', 'end_date'))
-    pagination = OperationLog.query.filter(
-        OperationLog.operator_id == operator_id).filter(
-            OperationLog.time >= start_date).filter(
-                OperationLog.time <= end_date).paginate(page, per_page)
+    query = OperationLog.query
+    if operator_name:
+        query = OperationLog.query.filter(
+            exists().where(
+                OperationLog.operator_id == User.id,
+                User.name == operator_name))
+    if start_date:
+        query = query.filter(
+            OperationLog.time >= start_date)
+    if end_date:
+        query = query.filter(
+            OperationLog.time <= end_date)
+    pagination = query.paginate(page, per_page)
     return render_template('admin_log_search.html', pagination=pagination)
 
 
@@ -556,7 +566,8 @@ def admin_log_clean(operator_id):
         abort(404)
     form = PeroidForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        query = OperationLog.query.filter(OperationLog.id == operator_id)
+        query = OperationLog.query.filter(
+            OperationLog.operator_id == operator_id)
         if form.start_date.data:
             start_time = datetime.fromordinal(form.start_date.data.toordinal())
             query = query.filter(OperationLog.time >= start_time)
@@ -1134,14 +1145,14 @@ def note_clean():
                            title='clean before {}'.format(form.date.data))
 
 
-@app.route('/note/search/finished/<boolean:finished>' +
-           '/page/<int:page>/per_page/<int:per_page>',
+@app.route('/note/page/<int:page>/per_page/<int:per_page>/search',
            methods=['GET'])
 @login_required
-def note_search(finished, page, per_page):
+def note_search(page, per_page):
+    finished = BooleanConverter.to_python(request.args.get('finished'))
     query = Note.query.filter(Note.effective.is_(True)).filter(
         Note.finished == finished)
-    if 'admin' not in map(lambda r: r.name, current_user.roles):
+    if not current_user.has_role('admin'):
         query = query.filter(Note.user_id == current_user.id)
     return render_template('note_search.html', pagination=query.paginate(
         page, per_page))
@@ -1412,7 +1423,7 @@ def paybook_success_correct(bankcard_id, person_id, peroid):
     return render_template('paybook_success_correct.html', form=form)
 
 
-def _paybook_query(person_id, item_names, peroid, negative=False):
+def _paybook_query(person_idcard, item_names, peroid, negative=False):
     money = func.sum(PayBook.money).label('money')
     item = aliased(PayBookItem)
     query = db.session.query(
@@ -1428,8 +1439,8 @@ def _paybook_query(person_id, item_names, peroid, negative=False):
             Person, Person.id == PayBook.person_id).join(
                 Bankcard, Bankcard.id == PayBook.bankcard_id).join(
                     item, item.id == PayBook.item_id)
-    if person_id:
-        query = query.filter(PayBook.person_id == person_id)
+    if person_idcard:
+        query = query.filter(Person.idcard == person_idcard)
     if item_names:
         query = query.filter(PayBook.item_in(item_names))
     if peroid:
@@ -1460,11 +1471,12 @@ def paybook_search(page, per_page):
     '''
     search bank pay book
     '''
-    person_id, peroid = map(lambda name: request.args.get(name),
-                            ('person_id', 'peroid'))
+    person_idcard, peroid = map(
+        lambda name: request.args.get(name),
+        ('person_idcard', 'peroid'))
     item_names = BooleanConverter.to_python(request.args.get('all'))\
         and ['bank_should_pay', 'bank_payed', 'bank_failed'] or ['bank_payed']
-    query = _paybook_query(person_id, item_names, peroid)
+    query = _paybook_query(person_idcard, item_names, peroid)
     return render_template(
         'paybook_list.html',
         pagination=paginate(query, page, per_page))
@@ -1477,23 +1489,24 @@ def paybook_sys_search(page, per_page):
     '''
     search for sys pay book
     '''
-    person_id, peroid = map(lambda name: request.args.get(name),
-                            ('person_id', 'peroid'))
+    person_idcard, peroid = map(
+        lambda name: request.args.get(name),
+        ('person_idcard', 'peroid'))
     item_names = BooleanConverter.to_python(request.args.get('all')) and\
         ['sys_should_pay', 'sys_amend'] or\
         ['sys_should_pay']
-    query = _paybook_query(person_id, item_names, peroid, negative=True)
+    query = _paybook_query(person_idcard, item_names, peroid, negative=True)
     return render_template(
         'paybook_list.html',
         pagination=paginate(query, page, per_page))
 
 
-@app.route('/paybook/peroid/<date:peroid>/bankgrant', methods=['GET'])
+@app.route('/paybook/bankgrant', methods=['GET'])
 @pay_admin_required
 @OperationLog.log_template()
-def paybook_bankgrant(peroid):
+def paybook_bankgrant():
     money = func.sum(PayBook.money).label('money')
-    books = db.session.query(
+    query = db.session.query(
         Person.idcard.label('idcard'),
         Bankcard.no.label('bankcard_no'),
         Bankcard.name.label('bankcard_name'),
@@ -1501,10 +1514,15 @@ def paybook_bankgrant(peroid):
         Person.status.label('remark')).join(
             PayBook, Person.id == PayBook.person_id).join(
                 Bankcard, Bankcard.id == PayBook.bankcard_id).filter(
-                    PayBook.item_is('bank_should_pay'),
-                    PayBook.in_peroid(peroid)).group_by(
-                        PayBook.bankcard_id).having(
-                            money > 0).all()
+                    PayBook.item_is('bank_should_pay'))
+    peroid = None
+    if request.args.get('peroid'):
+        peroid = DateConverter.to_python(request.args.get('peroid'))
+    if peroid:
+        query = query.filter(PayBook.in_peroid(peroid))
+    books = query.group_by(
+        PayBook.bankcard_id).having(
+            money > 0).all()
 
     def book2csv(book):
 
@@ -1544,24 +1562,31 @@ def paybook_bankgrant(peroid):
                 peroid)})
 
 
-@app.route('/paybook/min-date/<date:mindate>/max-date/<date:maxdate>/public',
-           methods=['GET'])
+@app.route('/paybook/public', methods=['GET'])
 @admin_required
 @OperationLog.log_template()
-def paybook_pulic_report(mindate, maxdate):
+def paybook_pulic_report():
     money = func.sum(PayBook.money).label('money')
-    books = db.session.query(
+    query = db.session.query(
         Person.idcard.label('idcard'),
         Person.name.label('name'),
         Address.name.label('address_name'),
         Person.address_detail.label('address_detail'),
         money).join(
             PayBook, PayBook.person_id == Person.id).join(
-                Address, Address.id == Person.address_id).filter(
-                    PayBook.peroid >= mindate,
-                    PayBook.peroid <= maxdate).group_by(
-                        PayBook.person_id).having(
-                            money > 0)
+                Address, Address.id == Person.address_id)
+    mindate, maxdate = map(
+        lambda x: request.args.get(x),
+        ('mindate', 'maxdate'))
+    if mindate:
+        mindate = DateConverter.to_python(mindate)
+        query = query.filter(PayBook.peroid >= mindate)
+    if maxdate:
+        maxdate = DateConverter.to_python(maxdate)
+        query = query.filter(PayBook.peroid <= maxdate)
+    books = query.group_by(
+        PayBook.person_id).having(
+            money > 0)
 
     def book2csv(book):
         return ','.join(
