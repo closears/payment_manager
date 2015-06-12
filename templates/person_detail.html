@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}person detail{% endblock %}
+{% block content %}
+<form method='GET' action='{{ url_for("paybook_amend", person_id=person.id) }}'>
+  <h2>goto amend page</h2>
+  <div>
+    <label for='peroid'>peroid</label>
+    <input id='peroid' name='peroid'>
+  </div>
+  <input type='submit' value='go to'>
+</form>
+{%　endblock %}

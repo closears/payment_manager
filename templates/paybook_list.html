@@ -48,7 +48,7 @@
 {% if pagination.has_next or pagination.has_prev %}
 {{ render_pagination(pagination) }}
 {% endif %}
-{% if current_user %}
+{% if current_user.has_role('pay_admin') %}
 <form method='GET' action='{{ url_for("paybook_bankgrant") }}'>
   <h2>paybook bank grant</h2>
   <div>
@@ -57,8 +57,26 @@
   </div>
   <input type='submit' value='download'>
 </form>
+<form method='GET' action='{{ url_for("paybook_upload") }}'>
+  <h2>Go to upload page</h2>
+  <div>
+    <label for='peroid'>upload peroid</label>
+    <input id='peroid' name='peroid'>
+  </div>
+  <input type='submit' value='go to'>
+</form>
+{% endif %}
+{% if current_user.has_role('admin') %}
 <form method='GET' action='{{ url_for("paybook_public_report") }}'>
   <h2>public</h2>
+  <div>
+    <label for='mindate'>begin date</label>
+    <input id='mindate' name='mindate'>
+  </div>
+  <div>
+    <label for='maxdate'>end date</label>
+    <input id='maxdate' name='maxdate'>
+  </div>
   <input type='submit' value='download'>
 </form>
 {% endif %}

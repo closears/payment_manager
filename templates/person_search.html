@@ -36,9 +36,31 @@
       <td>
 	{% if current_user.has_role('admin') %}
 	<a href='{{ url_for("person_update", pk=item.id) }}'>update</a>
-	{% else %}
-	update
+	<a href='{{ url_for("person_delete", pk=item.id) }}'>delete</a>
+	<a href='{{ url_for("standard_bind", pk=item.id) }}'>bind standard</a>
+	{% if item.can_retire %}
+	<a href='{{ url_for("person_retire_reg", pk=item.id) }}'>retire</a>
 	{% endif %}
+	{% if item.can_normal %}
+	<a href='{{ url_for("person_normal_reg", pk=item.id) }}'>normal</a>
+	{% endif %}
+	{% if item.can_dead %}
+	<a href='{{ url_for("person_dead_reg", pk=item.id) }}'>dead</a>
+	{% endif %}
+	{% if item.can_abort %}
+	<a href='{{ url_for("person_abort_reg", pk=item.id) }}'>abort</a>
+	{% endif %}
+	{% if item.can_suspend %}
+	<a href='{{ url_for("person_suspend_reg", pk=item.id) }}'>suspend</a>
+	{% endif %}
+	{% if item.can_resume %}
+	<a href='{{ url_for("person_resume_reg", pk=item.id) }}'>resume</a>
+	{% endif %}
+	{% endif %}
+	{% if current_user.has_role('person_admin') %}
+	<a href='{{ url_for("note_add_to_person", pk=item.id) }}'>add note</a>
+	{% endif %}
+	<a href='{{ url_for("person_log_search", pk=item.id, page=1, per_page=10) }}'>log search</a>
       </td>
     </tr>
     {% endfor %}

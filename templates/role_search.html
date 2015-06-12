@@ -1,40 +1,27 @@
 {% extends 'base.html' %}
-{% block title %}bankcard search{% endblock %}
+{% block title %}role search{% endblock %}
 {% block content %}
 <form method='GET'>
   <div>
-    <label for='no'>no of bankcard</label>
-    <input id='no' name='no'>
-  </div>
-  <div>
     <label for='name'>begin of name</label>
-    <input id='name' name='name'>
-  </div>
-  <div>
-    <label for='idcard'>idcard of owner</label>
-    <input id='idcard' name='idcard'>
+    <input name='name' id='name'>
   </div>
   <input type='submit' value='search'>
 </form>
-<table class='table'>
+<table>
   <thead>
     <tr>
-      <th>no</th>
       <th>name</th>
-      <th>owner idcard</th>
-      <th>operator</th>
+      <th>operation</th>
     </tr>
   </thead>
   <tbody>
     {% for item in pagination.items %}
     <tr>
-      <td>{{ item.no }}</td>
       <td>{{ item.name }}</td>
-      <td>{{ item.owner.idcard }}</td>
       <td>
 	{% if current_user.has_role('admin') %}
-	<a href='{{ url_for("bankcard_update", pk=item.id ) }}'>update</a>
-	<a href='{{ url_for("bankcard_bind", pk=item.id) }}'>bind</a>
+	<a href='{{ url_for("admin_role_remove", pk=item.id) }}'>delete</a>
 	{% endif %}
       </td>
     </tr>

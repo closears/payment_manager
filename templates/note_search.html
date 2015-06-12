@@ -16,6 +16,7 @@
       <th>start date</th>
       <th>end date</th>
       <th>effective</th>
+      <th>operation</th>
     </tr>
   </thead>
   <tbody>
@@ -26,6 +27,10 @@
       <td>{{ item.start_date }}</td>
       <td>{{ item.end_date }}</td>
       <td>{{ item.effective }}</td>
+      <td>
+	<a href='{{ url_for("note_finish", pk=item.id) }}'>finish</a>
+	<a href='{{ url_for("note_disable", pk=item.id) }}'>disable</a>
+      </td>
     </tr>
     {% endfor %}
   </tbody>

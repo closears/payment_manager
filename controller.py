@@ -528,6 +528,19 @@ def admin_role_remove(pk):
             'confirm delete the role:{}').format(role.name))
 
 
+@app.route('/role/page/<int:page>/perpage/<int:per_page>/search',
+           methods=['GET'])
+@admin_required
+def admin_role_search(page, per_page):
+    name = request.args.get('name')
+    query = Role.query
+    if name:
+        query = query.filter(
+            Role.name.like('{}%'.decode('utf-8').format(name)))
+    return render_template('role_search.html',
+                           pagination=query.paginate(page, per_page))
+
+
 @app.route(
     '/admin/log/page/<int:page>/per_page/<int:per_page>/search',
     methods=['GET'])
@@ -742,7 +755,7 @@ def person_delete(pk):
 @admin_required
 @person_addr_filter
 @OperationLog.log_template('{{ person.id }},')
-def person_regire_reg(pk):
+def person_retire_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = DateForm(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -893,6 +906,14 @@ def person_update(pk):
     return render_template('person_edit.html', form=form)
 
 
+@app.route('/person/<int:pk>/detail', methods=['GET'])
+@login_required
+@person_addr_filter
+def person_detail(pk):
+    person = db.my_get_obj_or_404(Person, Person.id, pk)
+    return render_template('person_detail.html', person=person)
+
+
 @app.route('/person/page/<int:page>/perpage/<int:per_page>/search',
            methods=['GET'])
 @login_required
@@ -935,13 +956,16 @@ def standard_bind(pk):
     return render_template('standard_bind.html', form=form)
 
 
-@app.route('/person/<int:pk>/page/<int:page>/perpage/<int:per_page>/logsearch',
+@app.route('/person/<int:pk>/page/<int:page>/perpage/<int:per_page>/search',
            methods=['GET'])
 @login_required
 def person_log_search(pk, page, per_page):
     start_date, end_date = map(
-        lambda x: datetime.strptime(request.args.get(x), '%Y-%m-%d').date(),
+        lambda x: request.args.get(x),
         ('start_date', 'end_date'))
+    start_date, end_date = map(
+        lambda x: x and datetime.strptime(x, '%Y-%m-%d').date(),
+        (start_date, end_date))
     operator_id = request.args.get('operator_id')
     query = OperationLog.query.filter(
         OperationLog.method.in_([m.__name__ for m in (
@@ -951,14 +975,18 @@ def person_log_search(pk, page, per_page):
             person_dead_reg,
             person_delete,
             person_normal_reg,
-            person_regire_reg,
+            person_retire_reg,
             person_resume_reg,
             person_suspend_reg,
-            person_update)])).filter(
-                OperationLog.remark.like('{},%'.format(pk))).filter(
-                    OperationLog.time >= start_date).filter(
-                        OperationLog.time <= end_date).filter(
-                            OperationLog.operator_id == operator_id)
+            person_update)]))
+    if pk:
+        query = query.filter(OperationLog.remark.like('{},%'.format(pk)))
+    if start_date:
+        query = query.filter(OperationLog.time >= start_date)
+    if end_date:
+        query = query.filter(OperationLog.time <= end_date)
+    if operator_id:
+        query = query.filter(OperationLog.operator_id == operator_id)
     return render_template('person_log_search.html',
                            pagination=query.paginate(page, per_page))
 
@@ -1161,7 +1189,7 @@ def note_search(page, per_page):
 @app.route('/note/touser/<int:user_id>', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ user_id }}')
-def note_to_urer(user_id):
+def note_to_user(user_id):
     user = db.my_get_obj_or_404(User, User.id, user_id)
     form = NoteForm(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1197,10 +1225,26 @@ def pay_item_detail(pk):
     return render_template('pay_item_detail.html', item=item)
 
 
-@app.route('/paybook/upload/<date:peroid>', methods=['GET', 'POST'])
+@app.route('/payitem/page/<int:page>/perpage/<int:per_page>/search',
+           methods=['GET'])
+@pay_admin_required
+def pay_item_search(page, per_page):
+    name = request.args.get('name')
+    query = PayBookItem.query
+    if name:
+        query = query.filter(
+            PayBookItem.name.like('{}%'.decode('utf-8').format(name)))
+    return render_template('pay_item_search.html',
+                           pagination=query.paginate(page, per_page))
+
+
+@app.route('/paybook/upload', methods=['GET', 'POST'])
 @pay_admin_required
 @OperationLog.log_template('{{ peroid }}')
-def paybook_upload(peroid):
+def paybook_upload():
+    peroid = request.args.get('peroid')
+    if peroid:
+        peroid = datetime.strptime(peroid, '%Y-%m-%d').date()
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         f = request.files['file']
@@ -1253,11 +1297,15 @@ def paybook_upload(peroid):
     return render_template('upload.html', form=form)
 
 
-@app.route('/paybook/person/<int:person_id>' +
-           '/peroid/<date:peroid>/amend', methods=['GET', 'POST'])
+@app.route('/paybook/person/<int:person_id>/amend', methods=['GET', 'POST'])
 @admin_required
 @OperationLog.log_template('{{ person_id }},{{ peroid }}')
-def paybook_amend(person_id, peroid):
+def paybook_amend(person_id):
+    peroid = request.args.get('peroid')
+    if not peroid:
+        flash("the peroid is required")
+        abort(500)
+    peroid = datetime.strptime(peroid, '%Y-%m-%d').date()
     money = func.sum(PayBook.money).label('money')
     paybooks = db.session.query(
         PayBook.person_id.label('person'),
