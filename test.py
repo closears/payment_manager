@@ -683,7 +683,7 @@ class PersonTestCase3(PersonTestBase):
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_normal_reg', pk=person.id))
-        self.client.post(url_for('person_regire_reg', pk=person.id), data={
+        self.client.post(url_for('person_retire_reg', pk=person.id), data={
             'date': '2011-08-01'})
         self.assertEqual(date(2011, 8, 1), person.retire_day)
         self._remove_person(person.id)
@@ -736,7 +736,7 @@ class PersonTestCase5(PersonTestBase):
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_normal_reg', pk=person.id))
-        self.client.post(url_for('person_regire_reg', pk=person.id),
+        self.client.post(url_for('person_retire_reg', pk=person.id),
                          data=dict(date='2011-08-01'))
         self.assertTrue(person.can_dead_retire)
         self.client.post(url_for('person_dead_reg', pk=person.id),
@@ -938,7 +938,7 @@ class PersonTestCase12(PersonTestBase):
         self.assert500(rv)
         self.client.post(url_for('person_normal_reg', pk=person.id))
         self.client.post(
-            url_for('person_regire_reg', pk=person.id),
+            url_for('person_retire_reg', pk=person.id),
             data={'date': '2011-08-01'})
         self.assertEqual(date(2011, 8, 1), person.retire_day)
         self.assertTrue(person.is_valid_standard_wages)
@@ -1353,16 +1353,14 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.client.post(url_for('bankcard_add'), data=dict(
             name='test', no='6228410770613888888'))
         csvstr = r'xx|test|420525195107010010|60|xx|6228410770613888888'
-        rv = self.client.post(url_for('paybook_upload',
-                                      peroid=date(2011, 8, 1)),
+        rv = self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                               data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
         self.assert500(rv)
         bankcard = Bankcard.query.filter(
             Bankcard.no == '6228410770613888888').one()
         self.client.post(url_for('bankcard_bind', pk=bankcard.id),
                          data=dict(idcard='420525195107010010'))
-        rv = self.client.post(url_for('paybook_upload',
-                                      peroid=date(2011, 8, 1)),
+        rv = self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                               data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
         self.assertEqual(2, len(person.paybooks))
         PayBook.query.delete()
@@ -1378,8 +1376,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         csvstr += '\nxx|test|420525195107010011|60|xx|6228410770613888888'
         person2 = Person.query.filter(
             Person.idcard == '420525195107010011').one()
-        rv = self.client.post(url_for('paybook_upload',
-                                      peroid=date(2011, 8, 1)),
+        rv = self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                               data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
         self.assertEqual(2, len(person2.paybooks))
         self.assertEqual(2, len(person.paybooks))
@@ -1415,7 +1412,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.client.post(url_for('bankcard_bind', pk=bankcard.id),
                          data=dict(idcard='420525195107010010'))
         csvstr = r'xx|test|420525195107010010|60|xx|6228410770613888888'
-        self.client.post(url_for('paybook_upload', peroid=date(2011, 8, 1)),
+        self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                          data=dict(file=(io.BytesIO(csvstr), 'test.csv')))
         self.assertEqual(60.0, self._sum(bankcard.paybooks, 'bank_should_pay'))
         self.client.post(url_for('bankcard_add'), data=dict(
@@ -1430,7 +1427,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
             url_for(
                 'paybook_amend',
                 person_id=person.id,
-                peroid=date(2011, 8, 1)),
+                peroid='2011-8-1'),
             data=dict(
                 bankcard='6228410770613666666',
                 money='75.00'))
@@ -1492,7 +1489,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
             idcard='420525195107010011'))
         upload_str = 'x|test|420525195107010010|60|x|6228410770613888888\n' +\
                      'x|test|420525195107010011|60|x|6228410770613666666'
-        self.client.post(url_for('paybook_upload', peroid=date(2011, 8, 1)),
+        self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                          data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
         self.assertEqual(60, self._sum(bankcard1.paybooks, 'bank_should_pay'))
         self.client.post(url_for('paybook_batch_success'), data=dict(
@@ -1526,7 +1523,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.client.post(url_for('bankcard_bind', pk=bankcard.id), data=dict(
             idcard='420525195107010010'))
         upload_str = 'x|test|420525195107010010|60|x|6228410770613888888'
-        self.client.post(url_for('paybook_upload', peroid=date(2011, 8, 1)),
+        self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                          data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
         self.assertEqual(60, self._sum(bankcard.paybooks, 'bank_should_pay'))
         self.assertEqual(0, self._sum(bankcard.paybooks, 'bank_payed'))
@@ -1572,7 +1569,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.client.post(url_for('bankcard_bind', pk=bankcard.id), data=dict(
             idcard='420525195107010010'))
         upload_str = 'x|test|420525195107010010|60|x|6228410770613888888'
-        self.client.post(url_for('paybook_upload', peroid=date(2011, 8, 1)),
+        self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                          data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
         self.assertEqual(60, self._sum(bankcard.paybooks, 'bank_should_pay'))
         self.assertEqual(0, self._sum(bankcard.paybooks))
@@ -1614,7 +1611,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
                          data=dict(idcard='420525195107010010'))
         upload_str = 'x|test|420525195107010010|60|x|6228410770613888888'
         self.client.post(
-            url_for('paybook_upload', peroid=date(2011, 8, 1)),
+            url_for('paybook_upload', peroid='2011-8-1'),
             data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
         self.client.post(url_for('paybook_batch_success'), data=dict(
             peroid=date(2011, 8, 1)))
@@ -1666,7 +1663,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.client.post(url_for('bankcard_bind', pk=bankcard.id),
                          data=dict(idcard='420525195107010010'))
         upload_str = 'x|test|420525195107010010|60|x|6228410770613888888'
-        self.client.post(url_for('paybook_upload', peroid=date(2011, 8, 1)),
+        self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                          data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
         self.assertEqual(-60, self._sum(bankcard.paybooks, 'sys_should_pay'))
         rv = self.client.get(url_for(
@@ -1680,7 +1677,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.client.post(url_for(
             'paybook_amend',
             person_id=person.id,
-            peroid=date(2011, 8, 1)),
+            peroid='2011-8-1'),
             data=dict(
                 bankcard='6228410770613888888',
                 money='75.00'))
@@ -1727,7 +1724,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
                       'x|test|420525195107010010|60|x|6228410770613888887\n' +
                       'x|test|420525195107010010|60|x|6228410770613888888\n' +
                       'x|test|420525195107010010|60|x|6228410770613888889')
-        self.client.post(url_for('paybook_upload', peroid=date(2015, 1, 1)),
+        self.client.post(url_for('paybook_upload', peroid='2015-1-1'),
                          data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
