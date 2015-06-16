@@ -554,9 +554,9 @@ def admin_log_search(page, per_page):
     query = OperationLog.query
     if operator_name:
         query = OperationLog.query.filter(
-            exists().where(
+            exists().where(and_(
                 OperationLog.operator_id == User.id,
-                User.name == operator_name))
+                User.name == operator_name)))
     if start_date:
         query = query.filter(
             OperationLog.time >= start_date)

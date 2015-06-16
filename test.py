@@ -6,12 +6,11 @@ import tempfile
 import unittest
 from werkzeug import MultiDict
 from flask_testing import TestCase
-from flask import request, url_for
+from flask import url_for
 from sqlalchemy.orm.exc import NoResultFound
 from wtforms_alchemy import ModelForm
-from controller import app, db
 from models import (User, Role, Address, Person, Standard, Bankcard,
-                    Note, PayBookItem, PayBook)
+                    Note, PayBookItem, PayBook, OperationLog)
 from forms import LoginForm, AdminAddRoleForm, PersonForm
 
 
@@ -58,47 +57,49 @@ class UserForm(ModelForm):
         model = User
 
 
-@app.route('/test', methods=['POST'])
-def test_controller():
-    user = User()
-    form = UserForm(request.form)
-    form.populate_obj(user)
-    return user.name
-
-
-def test():
-    with app.test_request_context():
-        with app.test_client() as c:
-            rv = c.post('/test', data=dict(name='tom'))
-            assert rv is not None
-            assert rv.status_code == 200
-
-
 class TestBase(TestCase):
+    def _get_or_create(self, model_class, key, value, **kwargs):
+        if isinstance(key, str):
+            key = getattr(model_class, key)
+        try:
+            result = self.session.query(model_class).filter(
+                key == value).one()
+        except NoResultFound:
+            result = model_class(**kwargs)
+            self.session.add(result)
+            self.session.commit()
+        return result
+
+    def _del_all_instance(self, model_class):
+        self.session.query(model_class).delete()
+        self.session.commit()
 
     def create_app(self):
+        from controller import app
         app.config.from_pyfile('config.cfg', silent=True)
         app.config['WTF_CSRF_ENABLED'] = False
         app.config['CSRF_ENABLED'] = False
         return app
 
     def setUp(self):
-        try:
-            os.remove(file('test.db'))
-        except IOError:
-            pass
-        db.create_all()
-        try:
-            user = db.session.query(User).filter(User.name == 'admin').one()
-        except NoResultFound:
-            user = User(name='admin', password='admin')
+        from controller import db
+        if not db.engine.has_table('users'):
+            db.create_all()
+
+        self.connect = db.engine.begin()
+        self.session = db.session
+        user = self._get_or_create(
+            User, 'name', 'admin', name='admin', password='admin')
+        if not user.has_role('admin'):
+            role = self._get_or_create(
+                Role, 'name', 'admin', name='admin')
+            user.roles.append(role)
+            self.session.commit()
         self.admin = user
-        db.session.add(user)
-        db.session.commit()
+        self.db = db
 
     def tearDown(self):
-        db.session.remove()
-        db.drop_all()
+        self.db.session.remove()
 
     def assert_authorized(self):
         rv = self.client.get('/index.html')
@@ -143,8 +144,6 @@ class TestBase(TestCase):
 
 
 class UserTestCase(TestBase):
-    SQLALCHEMY_DATABASE_URI = 'sqlite://'
-    TESTING = True
 
     def testLoginGet(self):
         rv = self.client.get('/login')
@@ -217,19 +216,6 @@ class UserTestCase(TestBase):
 
 class AdminTestCase(TestBase):
 
-    def setUp(self):
-        super(AdminTestCase, self).setUp()
-        user = db.session.query(User).filter(User.name == 'admin').one()
-        try:
-            admin_role = db.session.query(Role).filter(
-                Role.name == 'admin').one()
-        except NoResultFound:
-            admin_role = Role(name='admin')
-            db.session.add(admin_role)
-            db.session.commit()
-        user.roles.append(admin_role)
-        db.session.commit()
-
     def test_user_form(self):
         self.assertIsNotNone(UserForm().data)
 
@@ -241,13 +227,16 @@ class AdminTestCase(TestBase):
         rv = self.client.get('/admin/user/add')
         self.assertIn('<form', rv.data)
         self.client.post(
-            '/admin/user/add', data=dict(
+            url_for('admin_add_user'),
+            data=dict(
                 name='test',
                 password='test',
                 active=True
             ))
-        user = User.query.filter(User.name == 'test').one()
+        user = self._get_or_create(User, 'name', 'test')
         self.assertEqual(user.name, 'test')
+        self.session.query(User).delete()
+        self.session.commit()
 
     def test_remove_user(self):
         self.assert_not_authorized()
@@ -256,15 +245,18 @@ class AdminTestCase(TestBase):
         rv = self.client.get('/admin/user/add')
         self.assertIn('<form', rv.data)
         self.client.post(
-            '/admin/user/add', data=dict(
+            url_for('admin_add_user'),
+            data=dict(
                 name='test2',
                 password='test2',
                 active=True))
-        user = User.query.filter(User.name == 'test2').one()
+        user = self._get_or_create(User, 'name', 'test2')
         self.client.post(url_for('admin_remove_user', pk=user.id))
         self.assertTrue(not User.query.filter(User.name == 'test2').all())
         rv = self.client.post(url_for('admin_remove_user', pk=user.id))
         self.assert404(rv)
+        self.session.query(User).delete()
+        self.session.commit()
 
     def test_admin_user_inactivate(self):
         self.assert_not_authorized()
@@ -272,9 +264,8 @@ class AdminTestCase(TestBase):
             name='admin',
             password='admin'))
         self.assert_authorized()
-        user = User(name='test', password='test')
-        db.session.add(user)
-        db.session.commit()
+        user = self._get_or_create(
+            User, 'name', 'test', name='test', password='test')
         self.assertTrue(user.active)
         rv = self.client.get(url_for('admin_user_inactivate', pk=user.id))
         self.assertIn('submit', rv.data)
@@ -285,16 +276,15 @@ class AdminTestCase(TestBase):
         self.assertIn('success', rv.data)
         user = User.query.get(user.id)
         self.assertTrue(user.active)
-        db.session.delete(user)
-        db.session.commit()
+        self.session.query(User).delete()
+        self.session.commit()
 
     def test_admin_user_changpassword(self):
         self.client.post('/login', data=dict(
             name='admin', password='admin'))
         self.assert_authorized()
-        user = User(name='test', password='test')
-        db.session.add(user)
-        db.session.commit()
+        user = self._get_or_create(
+            User, 'name', 'test', name='test', password='test')
         rv = self.client.get(url_for('admin_user_changepassword', pk=user.id))
         self.assertIn('<form', rv.data)
         rv = self.client.get(url_for('admin_user_changepassword', pk=100))
@@ -305,27 +295,25 @@ class AdminTestCase(TestBase):
         )
         user = User.query.get(user.id)
         self.assertEqual(User(password='123123').password, user.password)
-        db.session.delete(user)
-        db.session.commit()
+        self.session.query(User).delete()
+        self.session.commit()
 
     def test_admin_user_add_role_form(self):
-        role = Role(name='test')
-        db.session.add(role)
-        db.session.commit()
+        self._get_or_create(Role, 'name', 'test', name='test')
         user = User.query.filter(User.name == 'admin').one()
         form = AdminAddRoleForm(user=user)
         self.assertIn('test', form.role())
-        db.session.delete(role)
-        db.session.commit()
+        self.session.query(Role).delete()
+        self.session.commit()
 
     def test_admin_user_add_and_romove_role(self):
         user = User(name='test', password='test')
         role = Role(name='test')
         role1 = Role(name='test1')
-        db.session.add(role1)
-        db.session.add(role)
-        db.session.add(user)
-        db.session.commit()
+        self.session.add(role1)
+        self.session.add(role)
+        self.session.add(user)
+        self.session.commit()
 
         self.client.post('/login', data=dict(
             name='admin',
@@ -346,16 +334,14 @@ class AdminTestCase(TestBase):
         user = User.query.get(user.id)
         self.assertNotIn(role1, user.roles)
         user.roles = []
-        db.session.commit()
-        db.session.delete(user)
-        db.session.delete(role)
-        db.session.delete(role1)
-        db.session.commit()
+        self.session.commit()
+        self._del_all_instance(User)
+        self._del_all_instance(Role)
 
     def test_admin_user_detail(self):
         user = User.query.filter(User.name == 'admin').one()
         role = Role(name='test')
-        db.session.add(role)
+        self.session.add(role)
         self.assert_not_authorized()
         self.client.post('/login', data=dict(
             name='admin',
@@ -368,28 +354,23 @@ class AdminTestCase(TestBase):
         self.assertIn('admin', rv.data)
         self.assertIn('test', rv.data)
         user.roles.remove(role)
-        db.session.commit()
-        db.session.delete(role)
-        db.session.commit()
+        self._del_all_instance(User)
+        self._del_all_instance(Role)
 
     def test_user_search(self):
         for i in range(30):
             user = User(name='test{}'.format(i), password='test')
-            db.session.add(user)
+            self.session.add(user)
             role = Role(name='test{}'.format(i))
             user.roles.append(role)
-            db.session.commit()
-
+            self.session.commit()
         self.client.post('/login', data=dict(name='admin', password='admin'))
-        self.client.get(
-            url_for('admin_user_search', name='test', page=1, per_page=20))
-
-        users = User.query.filter(User.name.like('test%')).all()
-        for user in users:
-            user.roles = []
-            db.session.commit()
-            db.session.delete(user)
-        db.session.commit()
+        rv = self.client.get(
+            url_for('admin_user_search', name='test', page=1, per_page=30))
+        self.assertIn('test0', rv.data)
+        self.assertIn('test29', rv.data)
+        self._del_all_instance(User)
+        self._del_all_instance(Role)
 
     def test_admin_add_role(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
@@ -398,11 +379,12 @@ class AdminTestCase(TestBase):
         self.client.post(url_for('admin_role_add'), data=dict(name='test'))
         role = Role.query.filter(Role.name == 'test').one()
         self.assertEqual(role.name, 'test')
+        self._del_all_instance(Role)
 
     def test_admin_remove_role(self):
         role = Role(name='test')
-        db.session.add(role)
-        db.session.commit()
+        self.session.add(role)
+        self.session.commit()
         self.client.post('/login', data=dict(name='admin', password='admin'))
         rv = self.client.get(url_for('admin_role_remove', pk=role.id))
         self.assert_200(rv)
@@ -412,12 +394,12 @@ class AdminTestCase(TestBase):
         self.assertIsNone(Role.query.get(role.id))
 
     def test_admin_search_log(self):
+        self._del_all_instance(OperationLog)
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.assert_authorized()
-        admin = User.query.filter(User.name == 'admin').one()
         rv = self.client.get(url_for(
             'admin_log_search',
-            operator_id=admin.id,
+            operator_name='admin',
             start_date='2015-01-01',
             end_date='2015-12-31',
             page=1,
@@ -425,6 +407,7 @@ class AdminTestCase(TestBase):
         self.assertIn('login', rv.data)
 
     def test_admin_log_clean(self):
+        self._del_all_instance(OperationLog)
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.assert_authorized()
         admin = User.query.filter(User.name == 'admin').one()
@@ -454,37 +437,51 @@ class AdminTestCase(TestBase):
 
 
 class AddressDataMixin(object):
-    def __init__(self, session=db.session):
-        self.parent_addr = Address(no='420525', name='parent')
+    def __init__(self):
 
-        self.child1_addr = Address(no='42052511', name='child1')
-        self.child11_addr = Address(no='42052511001', name='child11')
-        self.child12_addr = Address(no='42052511002', name='child12')
+        def get_or_create(no, name=None):
+            try:
+                result = self.session.query(Address).filter(
+                    Address.no == no).one()
+            except NoResultFound:
+                result = Address(no=no, name=name)
+                self.session.add(result)
+                self.session.commit()
+            return result
+        self.parent_addr = get_or_create(no='420525', name='parent')
 
-        self.child2_addr = Address(no='42052512', name='child2')
-        self.child21_addr = Address(no='42052512001', name='child21')
-        self.child22_addr = Address(no='42052512002', name='child22')
-        session.add_all([self.parent_addr, self.child1_addr,
-                         self.child11_addr, self.child12_addr,
-                         self.child2_addr, self.child21_addr,
-                         self.child22_addr])
-        session.commit()
+        self.child1_addr, self.child11_addr, self.child12_addr = map(
+            lambda args: get_or_create(args[0], args[1]),
+            (
+                ('42052511', 'child1'),
+                ('42052511001', 'child11'),
+                ('42052511002', 'child12'),
+            ))
+        self.child2_addr, self.child21_addr, self.child22_addr = map(
+            lambda args: get_or_create(args[0], args[1]),
+            (
+                ('42052512', 'child2'),
+                ('42052512001', 'child21'),
+                ('42052512002', 'child22'),
+            ))
         self.parent_addr.childs.extend([self.child1_addr, self.child2_addr])
         self.child1_addr.childs.extend([self.child11_addr, self.child12_addr])
         self.child2_addr.childs.extend([self.child21_addr, self.child22_addr])
-        session.commit()
+        self.db.session.commit()
 
 
 class AddressTestCase(TestBase, AddressDataMixin):
+
     def setUp(self):
-        super(AddressTestCase, self).setUp()
+        TestBase.setUp(self)
         AddressDataMixin.__init__(self)
-        role = Role(name='admin')
-        db.session.add(role)
-        db.session.commit()
-        self.admin.roles.append(role)
+
+        if not self.admin.has_role('admin'):
+            role = self._get_or_create(
+                Role, 'name', 'admin', name='admin')
+            self.admin.roles.append(role)
         self.admin.address = self.parent_addr
-        db.session.commit()
+        self.session.commit()
 
     def test(self):
         self.assertEqual(2, len(self.admin.address.childs))
@@ -512,16 +509,16 @@ class AddressTestCase(TestBase, AddressDataMixin):
         address = Address.query.filter(
             Address.name == 'test2').one()
         self.assertFalse(address.parent)
-        db.session.query(Address).delete()
-        db.session.commit()
+        self.session.query(Address).delete()
+        self.session.commit()
 
     def test_address_delete(self):
         child3 = Address(no='42052513', name='child3')
         child31 = Address(no='42052513001', name='child31')
         child32 = Address(no='42052513002', name='child32')
         child3.childs.extend([child31, child32])
-        db.session.add(child3)
-        db.session.commit()
+        self.session.add(child3)
+        self.session.commit()
 
         self.assertIsNotNone(Address.query.get(child3.id))
         self.assertIsNotNone(Address.query.get(child31.id))
@@ -560,8 +557,7 @@ class AddressTestCase(TestBase, AddressDataMixin):
 
 
 class PersonAddRemoveMixin(object):
-    def _add_person(self, idcard, birthday, name, address_id,
-                    session=db.session):
+    def _add_person(self, idcard, birthday, name, address_id):
         from uuid import uuid4
         birthday = (isinstance(birthday, date) and birthday or
                     date.fromordinal(
@@ -575,23 +571,22 @@ class PersonAddRemoveMixin(object):
             securi_no=uuid4().hex,
             create_by=self.admin)
         person.reg()
-        session.add(person)
-        session.commit()
+        self.session.add(person)
+        self.session.commit()
 
-    def _remove_person(self, pk, session=db.session):
-        session.query(Person.id == pk).delete()
-        session.commit()
+    def _remove_person(self, pk):
+        self.session.query(Person.id == pk).delete()
+        self.session.commit()
 
 
 class PersonTestBase(TestBase, PersonAddRemoveMixin, AddressDataMixin):
 
     def setUp(self):
-        super(PersonTestBase, self).setUp()
+        TestBase.setUp(self)
         AddressDataMixin.__init__(self)
         PersonAddRemoveMixin.__init__(self)
-        self.admin.roles.append(Role(name='admin'))
         self.admin.address = self.parent_addr
-        db.session.commit()
+        self.session.commit()
 
 
 class PersonTestCase(PersonTestBase):
@@ -641,6 +636,7 @@ class PersonTestCase(PersonTestBase):
         person_count = Person.query.filter(
             Person.idcard == '420525195107010010').count()
         self.assertEqual(0, person_count)
+        self._del_all_instance(Person)
 
     def test_person_delete(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
@@ -653,8 +649,8 @@ class PersonTestCase(PersonTestBase):
             address_detail='xxxx',
             securi_no='123123',
             personal_wage='0.94'))
-        person = db.session.query(Person).filter(
-            Person.idcard == '420525195107010010').one()
+        person = self._get_or_create(
+            Person, 'idcard', '420525195107010010')
         self.assertIsNotNone(person)
         self.assertTrue(person.can_normal)
         persons = Person.query.filter(Person.id == person.id).all()
@@ -664,9 +660,7 @@ class PersonTestCase(PersonTestBase):
         self.client.post(url_for('person_delete', pk=person.id))
         persons = Person.query.filter(Person.id == person.id).all()
         self.assertFalse(persons)
-
-
-class PersonTestCase2(PersonTestBase):
+        self._del_all_instance(Person)
 
     def test_person_normal_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
@@ -678,6 +672,7 @@ class PersonTestCase2(PersonTestBase):
         self.client.post(url_for('person_normal_reg', pk=person.id))
         self.assertTrue(person.can_retire)
         self._remove_person(person.id)
+        self._del_all_instance(Person)
 
 
 class PersonTestCase3(PersonTestBase):
