@@ -597,6 +597,7 @@ class PersonTestCase(PersonTestBase):
         self.assertIsNotNone(person.status)
 
     def test_person_form(self):
+        self._del_all_instance(Person)
         form = PersonForm(self.admin, formdata=MultiDict([
             ('idcard', '420525195107010010'),
             ('birthday', '1951-07-01'),
@@ -612,14 +613,15 @@ class PersonTestCase(PersonTestBase):
 
     def test_person_add(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         rv = self.client.get(url_for('person_add'))
         self.assert_200(rv)
         self._add_person(
             '420525195107010010', '1951-07-01', 'test', self.parent_addr.id)
-        person = Person.query.filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         self.assertIsNotNone(person)
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
 
         self.client.post(url_for('person_add'), data=dict(
             idcard='420525195107010010',
@@ -632,7 +634,7 @@ class PersonTestCase(PersonTestBase):
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
         self.assertIsNotNone(person)
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
         person_count = Person.query.filter(
             Person.idcard == '420525195107010010').count()
         self.assertEqual(0, person_count)
@@ -640,6 +642,7 @@ class PersonTestCase(PersonTestBase):
 
     def test_person_delete(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         self.assert_authorized()
         self.client.post(url_for('person_add'), data=dict(
             idcard='420525195107010010',
@@ -653,46 +656,46 @@ class PersonTestCase(PersonTestBase):
             Person, 'idcard', '420525195107010010')
         self.assertIsNotNone(person)
         self.assertTrue(person.can_normal)
-        persons = Person.query.filter(Person.id == person.id).all()
+        persons = self.session.query(Person).filter(
+            Person.id == person.id).all()
         self.assertTrue(persons)
         rv = self.client.get(url_for('person_delete', pk=person.id))
         self.assertIn('delete', rv.data)
         self.client.post(url_for('person_delete', pk=person.id))
-        persons = Person.query.filter(Person.id == person.id).all()
-        self.assertFalse(persons)
         self._del_all_instance(Person)
 
     def test_person_normal_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         self.client.get('/')
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.parent_addr.id)
-        person = Person.query.filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_normal_reg', pk=person.id))
+        person = self.session.query(Person).filter(
+            Person.idcard == '420525195107010010').one()
         self.assertTrue(person.can_retire)
-        self._remove_person(person.id)
         self._del_all_instance(Person)
 
-
-class PersonTestCase3(PersonTestBase):
     def test_person_retire_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         self.client.get('/')
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.parent_addr.id)
-        person = Person.query.filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_normal_reg', pk=person.id))
         self.client.post(url_for('person_retire_reg', pk=person.id), data={
             'date': '2011-08-01'})
+        person = self.session.query(Person).get(person.id)
         self.assertEqual(date(2011, 8, 1), person.retire_day)
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
 
-
-class PersonTestCase4(PersonTestBase):
     def test_person_batch_normal(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         self.client.get('/')
         map(lambda x: self._add_person(
             '4205251951070100{:0>2}'.format(x),
@@ -701,57 +704,59 @@ class PersonTestCase4(PersonTestBase):
         self.assertGreaterEqual(Person.query.filter(
             Person.idcard.like('420525195107%')).all(), 9)
         self.assertIn('420525195107',
-                      [p.idcard[:12] for p in Person.query.all()])
+                      [p.idcard[:12] for p in self.session.query(
+                          Person).all()])
         self.client.post(url_for('person_batch_normal'), data=dict(
             start_date='1951-07-01', end_date='1951-07-31'))
-        for person in db.session.query(Person).filter(
+        for person in self.session.query(Person).filter(
                 Person.idcard.like('420525195107%')).all():
+            person = self.session.query(Person).get(person.id)
             self.assertTrue(person.can_retire)
-        db.session.query(Person).delete()
-        db.session.commit()
-        self.assertNotIn('420525195107',
-                         [p.idcard[:12] for p in Person.query.all()])
+        self._del_all_instance(Person)
 
-
-class PersonTestCase5(PersonTestBase):
     def test_person_dead_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         self.client.get('/')
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.parent_addr.id)
-        person = db.session.query(Person).filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.post(url_for('person_dead_reg', pk=person.id),
                               data=dict(date='2015-07-01'))
         self.assert500(rv)
+        person = self.session.query(Person).get(person.id)
         self.assertFalse(person.can_retire)
         self.client.post(url_for('person_normal_reg', pk=person.id))
+        person = self.session.query(Person).get(person.id)
         self.assertTrue(person.can_retire)
         self.client.post(url_for('person_dead_reg', pk=person.id),
                          data=dict(date='2015-07-01'))
+        person = self.session.query(Person).get(person.id)
         self.assertEqual(person.dead_day, date(2015, 7, 1))
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.parent_addr.id)
-        person = db.session.query(Person).filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_normal_reg', pk=person.id))
         self.client.post(url_for('person_retire_reg', pk=person.id),
                          data=dict(date='2011-08-01'))
+        person = self.session.query(Person).get(person.id)
         self.assertTrue(person.can_dead_retire)
         self.client.post(url_for('person_dead_reg', pk=person.id),
                          data=dict(date='2015-07-01'))
+        person = self.session.query(Person).get(person.id)
         self.assertEqual(person.dead_day, date(2015, 7, 1))
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
 
-
-class PersonTestCase6(PersonTestBase):
     def test_person_abort_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         self.client.get('/')
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.parent_addr.id)
-        person = db.session.query(Person).filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.post(url_for('person_abort_reg', pk=person.id))
         self.assert500(rv)
@@ -759,18 +764,18 @@ class PersonTestCase6(PersonTestBase):
         self.assert200(rv)
         rv = self.client.post(url_for('person_abort_reg', pk=person.id))
         self.assert200(rv)
+        person = self.session.query(Person).get(person.id)
         self.assertFalse(person.can_retire)
         self.assertFalse(person.can_normal)
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
 
-
-class PersonTestCase7(PersonTestBase):
     def test_person_suspend_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         self.client.get('/')
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.parent_addr.id)
-        person = db.session.query(Person).filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.post(url_for('person_suspend_reg', pk=person.id))
         self.assert403(rv)
@@ -781,20 +786,23 @@ class PersonTestCase7(PersonTestBase):
                          data=dict(role=role.id))
         rv = self.client.post(url_for('person_suspend_reg', pk=person.id))
         self.assert200(rv)
+        person = self.session.query(Person).get(person.id)
         self.assertTrue(person.can_resume)
         self.client.post(url_for('admin_user_remove_role', pk=self.admin.id),
                          data=dict(role=role.id))
-        self.client.post(url_for('admin_role_remove', pk=role.id))
-        self._remove_person(person.id)
+        self.admin.roles = filter(lambda r: r.id != role.id, self.admin.roles)
+        self.session.commit()
+        self.session.delete(role)
+        self.session.commit()
+        self._del_all_instance(Person)
 
-
-class PersonTestCase8(PersonTestBase):
     def test_person_resume_reg(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(Person)
         self.client.get('/')
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.parent_addr.id)
-        person = db.session.query(Person).filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         rv = self.client.post(url_for('person_resume_reg', pk=person.id))
         self.assert403(rv)
@@ -805,20 +813,20 @@ class PersonTestCase8(PersonTestBase):
                          data=dict(role=role.id))
         rv = self.client.post(url_for('person_resume_reg', pk=person.id))
         self.assert200(rv)
+        person = self.session.query(Person).get(person.id)
         self.assertTrue(person.can_suspend)
         self.client.post(url_for('admin_user_remove_role', pk=self.admin.id),
                          data=dict(role=role.id))
         self.client.post(url_for('admin_role_remove', pk=role.id))
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
 
-
-class PersonTestCase9(PersonTestBase):
     def test_person_update(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
+        self._del_all_instance(OperationLog)
         self.client.get('/')
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.parent_addr.id)
-        person = db.session.query(Person).filter(
+        person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
         self.client.post(url_for('person_update', pk=person.id), data=dict(
             idcard='420525195107020011',
@@ -828,14 +836,13 @@ class PersonTestCase9(PersonTestBase):
             personal_wage='11.94',
             address_id=self.parent_addr.id,
             birthday='1951-07-02'))
+        person = self.session.query(Person).get(person.id)
         self.assertEqual('420525195107020011', person.idcard)
         self.assertEqual(date(1951, 7, 2), person.birthday)
         rv = self.client.get(url_for('person_update', pk=person.id))
         self.assertIn('1951-07-02', rv.data)
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
 
-
-class PersonTestCase10(PersonTestBase):
     def test_person_log_search(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -855,8 +862,7 @@ class PersonTestCase10(PersonTestBase):
                                      page=1,
                                      per_page=10))
         self.assert200(rv)
-        db.session.query(Person).delete()
-        db.session.commit()
+        self._del_all_instance(Person)
         persons = Person.query.filter(
             Person.idcard.like('4205251951070100%')).all()
         self.assertFalse(persons)
@@ -883,38 +889,33 @@ class PersonTestCase10(PersonTestBase):
                                      page=1,
                                      per_page=10))
         self.assertIn('person_update', rv.data)
-        self._remove_person(person.id)
+        self._del_all_instance(OperationLog)
+        self._del_all_instance(Person)
 
-
-class PersonTestCase11(PersonTestBase):
     def test_person_search(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
+        self._del_all_instance(Person)
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.admin.address.id)
-        person = Person.query.filter(
-            Person.idcard == '420525195107010010').one()
         rv = self.client.get(url_for('person_search',
                                      idcard='420525',
                                      name='tes',
-                                     address='p',
                                      page=1,
                                      per_page=2))
         self.assertIn('test', rv.data)
         rv = self.client.get(url_for('person_search',
                                      idcard='420525',
                                      name='tes',
-                                     address='None',
                                      page=1,
                                      per_page=2))
         self.assertIn('test', rv.data)
-        self._remove_person(person.id)
+        self._del_all_instance(Person)
 
-
-class PersonTestCase12(PersonTestBase):
     def test_standard_bind(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
+        self._del_all_instance(Person)
         self._add_person('420525195107010010', '1951-07-01', 'test',
                          self.admin.address.id)
         person = Person.query.filter(
@@ -924,8 +925,8 @@ class PersonTestCase12(PersonTestBase):
         self.assertIn('start_date', rv.data)
         self.assertIn('end_date', rv.data)
         standard = Standard(name='test', money='100')
-        db.session.add(standard)
-        db.session.commit()
+        self.session.add(standard)
+        self.session.commit()
 
         def bind():
             return self.client.post(url_for('standard_bind', pk=person.id),
@@ -939,15 +940,15 @@ class PersonTestCase12(PersonTestBase):
         self.client.post(
             url_for('person_retire_reg', pk=person.id),
             data={'date': '2011-08-01'})
+        person = self.session.query(Person).get(person.id)
         self.assertEqual(date(2011, 8, 1), person.retire_day)
         self.assertTrue(person.is_valid_standard_wages)
         bind()
         self.assertEqual(100, person.standard_wages[0].money)
-        db.session.delete(person.stand_assoces[0])
-        db.session.commit()
-        db.session.delete(standard)
-        db.session.commit()
-        self._remove_person(person.id)
+        self.session.delete(person.stand_assoces[0])
+        self.session.commit()
+        self._del_all_instance(Person)
+        self._del_all_instance(Standard)
 
 
 class StandardTestCase(TestBase):

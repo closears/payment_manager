@@ -518,7 +518,7 @@ def admin_role_remove(pk):
     form = Form(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         for user in role.users:
-            user.remove(role)
+            user.roles = filter(lambda r: r.id != role.id, user.roles)
             db.session.commit()
         db.session.delete(role)
         db.session.commit()
@@ -798,13 +798,14 @@ def person_normal_reg(pk):
 def person_batch_normal():
     form = PeroidForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        persons = Person.query.filter(
+        persons = db.session.query(Person).filter(
             Person.can_normal.is_(True)).filter(
                 Person.birthday >= form.start_date.data).filter(
                     Person.birthday <= form.end_date.data).all()
         for person in persons:
             person.normal()
             OperationLog.log(db.session, current_user, person=person)
+        db.session.flush()
         db.session.commit()
         return 'succes'
     return render_template('person_batch_normal.html', form=form)
