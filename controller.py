@@ -1290,8 +1290,9 @@ def paybook_upload():
                 flash("unbind bankcard can't pay")
                 abort(500)
             db.session.add_all(PayBook.create_tuple(
-                person, item1, item2, bankcard, bankcard, float(record.money),
-                peroid, current_user))
+                person, item1.id, item2.id, bankcard, bankcard,
+                float(record.money),
+                peroid, current_user.id))
         OperationLog.log(db.session, current_user, peroid=peroid)
         db.session.commit()
         return 'success'

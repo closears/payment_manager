@@ -733,9 +733,12 @@ class PayBook(db.Model):
                 result.update(item_id=item)
             else:
                 result.update(item=item)
+            if isinstance(user, int):
+                result.update(create_user_id=user)
+            else:
+                result.update(create_by=user)
             result.update(money=money)
             result.update(peroid=peroid)
-            result.update(create_by=user)
             return result
         return (PayBook(**_create_dict(_item, _bankcard, _money))
                 for _item, _bankcard, _money in
