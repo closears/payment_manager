@@ -31,7 +31,7 @@ class UserRoleAssoc(db.Model):
             user=repr(self.user), role=repr(self.role))
 
     def __str__(self):
-        unicode("{user},{role}").format(
+        return "{user},{role}".decode('utf-8').format(
             user=self.user.name, role=self.role.name)
 
 
@@ -59,7 +59,7 @@ class User(db.Model):
         )
 
     def __str__(self):
-        return unicode("{}").format(self.name)
+        return "{}".decode('utf-8').format(self.name)
 
     def is_active(self):
         return self.active
@@ -115,7 +115,7 @@ class Role(db.Model):
         return "<Role(name='name')>".format(self.name)
 
     def __str__(self):
-        return unicode("{}").format(self.name)
+        return "{}".decode('utf-8').format(self.name)
 
 
 class Address(db.Model):
@@ -143,7 +143,7 @@ class Address(db.Model):
         )
 
     def __str__(self):
-        return "{name}".format(name=self.name)
+        return "{name}".decode('utf-8').format(name=self.name)
 
     @property
     def descendants(self):
@@ -203,11 +203,12 @@ class PersonStandardAssoc(db.Model):
         )
 
     def __str__(self):
-        return unicode("{person},{standard},{start_date},{end_date}").format(
-            person=self.person.name,
-            standard=self.standard.name,
-            start_date=self.start_date,
-            end_date=self.end_date if self.end_date else ''
+        return "{person},{standard},{start_date},{end_date}".decode(
+            'utf-8').format(
+                person=self.person.name,
+                standard=self.standard.name,
+                start_date=self.start_date,
+                end_date=self.end_date if self.end_date else ''
         )
 
     @hybrid_property
@@ -296,11 +297,11 @@ class Person(db.Model):
         )
 
     def __str__(self):
-        return unicode('{idcard},{name},{status}'.format(
+        return '{idcard},{name},{status}'.decode('utf-8').format(
             idcard=self.idcard,
             name=self.name,
             status=self.status
-        ))
+        )
 
     @hybrid_property
     def personal_wage(self):
@@ -501,10 +502,10 @@ class Standard(db.Model):
         )
 
     def __str__(self):
-        return unicode('{name},{money}'.format(
+        return '{name},{money}'.decode('utf-8').format(
             name=self.name,
             money=self.money
-        ))
+        )
 
 
 class Bankcard(db.Model):
@@ -528,9 +529,9 @@ class Bankcard(db.Model):
         )
 
     def __str__(self):
-        return unicode('{no}({name})'.format(
+        return '{no}({name})'.decode('utf-8').format(
             no=self.no,
-            name=self.name))
+            name=self.name)
 
     @hybrid_property
     def binded(self):
@@ -557,7 +558,7 @@ class PayBookItem(db.Model):
         )
 
     def __str__(self):
-        return unicode('{name}'.format(name=self.name))
+        return '{name}'.decode('utf-8').format(name=self.name)
 
     @property
     def descendants(self):
@@ -627,13 +628,14 @@ class PayBook(db.Model):
         )
 
     def __str__(self):
-        return unicode('{person},{bankcard},{item},{money},{peroid}'.format(
-            person=self.person,
-            bankcard=self.bankcard,
-            item=self.item,
-            money=self.money,
-            peroid=self.peroid
-        ))
+        return '{person},{bankcard},{item},{money},{peroid}'.decode(
+            'utf-8').format(
+                person=self.person,
+                bankcard=self.bankcard,
+                item=self.item,
+                money=self.money,
+                peroid=self.peroid
+        )
 
     @hybrid_property
     def item(self):
@@ -771,7 +773,7 @@ class OperationLog(db.Model):
         )
 
     def __str__(self):
-        return unicode("{operator},{method},{remark},{time}").format(
+        return "{operator},{method},{remark},{time}".decode('utf-8').format(
             operator=self.operator.name,
             method=self.method,
             remark=self.remark,

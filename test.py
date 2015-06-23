@@ -563,20 +563,14 @@ class PersonAddRemoveMixin(object):
         birthday = (isinstance(birthday, date) and birthday or
                     date.fromordinal(
                         datetime.strptime(birthday, '%Y-%m-%d').toordinal()))
-        person = Person(
+        self.session.add(Person(
             idcard=idcard,
             birthday=birthday,
             name=name,
             address_id=address_id,
             address_detail='xxxx',
             securi_no=uuid4().hex,
-            create_by=self.admin)
-        person.reg()
-        self.session.add(person)
-        self.session.commit()
-
-    def _remove_person(self, pk):
-        self.session.query(Person.id == pk).delete()
+            create_by=self.admin).reg())
         self.session.commit()
 
 
@@ -1465,7 +1459,6 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
 
-    '''
     def test_paybook_batch_success(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self._del_all_instance(PayBook)
@@ -1717,9 +1710,8 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.assertIn('sys_amend', rv.data)
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
-        self._del_all_instance(Person)'''
+        self._del_all_instance(Person)
 
-    '''
     def test_paybook_bankgrant(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
@@ -1759,7 +1751,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.assertIn('6228410770613888888', rv.data)
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
-        self._del_all_instance(Person)'''
+        self._del_all_instance(Person)
 
 
 def run_test():
