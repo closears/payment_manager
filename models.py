@@ -525,7 +525,7 @@ class Bankcard(db.Model):
         return "<Bankcard(no='{no}',name='{name}',owner_id={owner})>".format(
             no=self.no,
             name=self.name,
-            owner_id=self.owner and self.owner.id or None
+            owner=self.owner and self.owner.id or None
         )
 
     def __str__(self):
@@ -599,16 +599,14 @@ class PayBook(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     person_id = db.Column(db.Integer, db.ForeignKey('persons.id'),
                           nullable=False)
+    person = db.relationship('Person', backref='paybooks')
     bankcard_id = db.Column(db.Integer, db.ForeignKey('bankcards.id'))
+    bankcard = db.relationship('Bankcard', backref='paybooks')
     item_id = db.Column(db.Integer, db.ForeignKey('paybookitems.id'),
                         nullable=False)
     money = db.Column(db.Float(precision=2), nullable=False)
     _peroid = db.Column(db.Date, default=datetime.datetime.now,
                         nullable=False)
-    person = db.relationship('Person', backref=db.backref('paybooks',
-                                                          order_by=id))
-    bankcard = db.relationship('Bankcard', backref=db.backref('paybooks',
-                                                              order_by=id))
     _item = db.relationship('PayBookItem')
     create_date = db.Column(
         db.Date, nullable=False, default=datetime.datetime.now)

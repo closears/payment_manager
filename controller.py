@@ -1290,11 +1290,12 @@ def paybook_upload():
                 flash("unbind bankcard can't pay")
                 abort(500)
             db.session.add_all(PayBook.create_tuple(
-                person, item1.id, item2.id, bankcard, bankcard,
+                person.id, item1.id, item2.id, bankcard.id, bankcard.id,
                 float(record.money),
                 peroid, current_user.id))
         OperationLog.log(db.session, current_user, peroid=peroid)
         db.session.commit()
+        db.session.flush()
         return 'success'
     return render_template('upload.html', form=form)
 
@@ -1364,12 +1365,12 @@ def paybook_batch_success():
             lst.extend(PayBook.create_tuple(
                 book.person_id, bank_should, bank_failed,
                 book.bankcard_id, book.bankcard_id,
-                book.money, book.peroid, current_user))
+                book.money, book.peroid, current_user.id))
         for book in query.filter(~in_fails):
             lst.extend(PayBook.create_tuple(
                 book.person_id, bank_should, bank_payed,
                 book.bankcard_id, book.bankcard_id,
-                book.money, book.peroid, current_user))
+                book.money, book.peroid, current_user.id))
         db.session.add_all(lst)
         OperationLog.log(db.session, current_user,
                          fails=','.join(form.fails.data.splitlines()))
@@ -1388,7 +1389,7 @@ def paybook_fail_correct(person_id, peroid):
     if request.method == 'POST' and form.validate_on_submit():
         money_q = func.sum(PayBook.money).label('money')
         books = db.session.query(
-            PayBook.bankcard_id.label('bankcard'),
+            PayBook.bankcard_id.label('bankcard_id'),
             money_q).filter(
             PayBook.person_id == person_id,
             PayBook.item_is('bank_failed'),
@@ -1419,11 +1420,11 @@ def paybook_fail_correct(person_id, peroid):
                         person_id,
                         bank_failed,
                         bank_should,
-                        b.bankcard,
-                        bankcard2,
+                        b.bankcard_id,
+                        bankcard2.id,
                         b.money,
                         datetime.now(),
-                        current_user)) or lst,
+                        current_user.id)) or lst,
                 books, []))
         OperationLog.log(db.session, current_user, person_id=person_id,
                          peroid=peroid)
@@ -1465,7 +1466,7 @@ def paybook_success_correct(bankcard_id, person_id, peroid):
                     bankcard_id,
                     min(form.money.data, books[0].money),
                     peroid,
-                    current_user))
+                    current_user.id))
         OperationLog.log(db.session, current_user, person_id=person_id,
                          bankcard_id=bankcard_id, peroid=peroid)
         db.session.commit()

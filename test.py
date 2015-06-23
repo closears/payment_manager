@@ -1332,6 +1332,14 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
                 self.session.commit()
         TestBase.tearDown(self)
 
+    def _load_books(self, person_id=None, bankcard_id=None):
+        query = self.session.query(PayBook)
+        if person_id:
+            query = query.filter(PayBook.person_id == person_id)
+        if bankcard_id:
+            query = query.filter(PayBook.bankcard_id == bankcard_id)
+        return query.all()
+
     def _sum(self, books, item=None):
         if item is not None:
             books = filter(lambda b: b.item_is(item), books)
@@ -1387,12 +1395,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.assertEqual(2, len(person.paybooks))
         self.assertEqual(1, len(filter(
             lambda e: e.item.name == 'bank_should_pay', person2.paybooks)))
-        self.assertEqual(
-            60.0,
-            sum(map(lambda e: e.money,
-                    filter(
-                        lambda e: e.item.name == 'bank_should_pay',
-                        person2.paybooks))))
+        self.assertEqual(60.0, self._sum(person2.paybooks, 'bank_should_pay'))
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
@@ -1437,6 +1440,9 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
                 bankcard='6228410770613666666',
                 money='75.00'))
         self.assert200(rv)
+        bankcard, bankcard2 = map(
+            lambda b: self.session.query(Bankcard).get(b.id),
+            (bankcard, bankcard2))
         self.assertEqual(0.00, self._sum(bankcard.paybooks, 'sys_should_pay'))
         self.assertEqual(0.00, self._sum(bankcard.paybooks, 'bank_should_pay'))
         # =================================================
@@ -1445,16 +1451,11 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.assertEqual(0.00, self._sum(bankcard2.paybooks, 'sys_should_pay'))
         self.assertEqual(75.00,
                          self._sum(bankcard2.paybooks, 'bank_should_pay'))
-        self.assertEqual(0.00, sum(map(lambda b: b.money, bankcard2.paybooks)))
+        self.assertEqual(0.00, self._sum(bankcard2.paybooks))
         person = Person.query.filter(
             Person.idcard == '420525195107010010').one()
-        self.assertEqual(0.00, sum(map(lambda e: e.money, person.paybooks)))
-        person_sys_books = filter(lambda e: e.item.name == 'sys_should_pay',
-                                  person.paybooks)
-        self.assertEqual(0.00, sum(map(lambda e: e.money, person_sys_books)))
-        person_bank_books = filter(lambda e: e.item.name == 'bank_should_pay',
-                                   person.paybooks)
-        self.assertEqual(75.00, sum(map(lambda e: e.money, person_bank_books)))
+        self.assertEqual(0.00, self._sum(person.paybooks))
+        self.assertEqual(75.00, self._sum(person.paybooks, 'bank_should_pay'))
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
@@ -1496,6 +1497,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
                      'x|test|420525195107010011|60|x|6228410770613666666'
         self.client.post(url_for('paybook_upload', peroid='2011-8-1'),
                          data=dict(file=(io.BytesIO(upload_str), 'test.csv')))
+        bankcard1 = self.session.query(Bankcard).get(bankcard1.id)
         self.assertEqual(60, self._sum(bankcard1.paybooks, 'bank_should_pay'))
         self.client.post(url_for('paybook_batch_success'), data=dict(
             peroid='2011-08-01', fails='6228410770613888888'))
@@ -1540,6 +1542,7 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self.assertEqual(0, self._sum(bankcard.paybooks, 'bank_failed'))
         self.client.post(url_for('paybook_batch_success'), data=dict(
             peroid='2011-08-01', fails='6228410770613888888'))
+        bankcard = self.session.query(Bankcard).get(bankcard.id)
         self.assertEqual(0, self._sum(bankcard.paybooks, 'bank_should_pay'))
         self.assertEqual(60, self._sum(bankcard.paybooks, 'bank_failed'))
         self.assertEqual(0, self._sum(bankcard.paybooks, 'bank_payed'))
@@ -1551,14 +1554,17 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
             idcard='420525195107010010'))
         person = self.session.query(Person).filter(
             Person.idcard == '420525195107010010').one()
-        self.client.post(url_for('paybook_fail_correct',
-                                 person_id=person.id,
-                                 peroid=date(2011, 8, 1)),
-                         data=dict(
-                             bankcard='6228410770613666666'))
+        self.assertEqual(2, len(person.bankcards))
+        rv = self.client.post(url_for('paybook_fail_correct',
+                                      person_id=person.id,
+                                      peroid=date(2011, 8, 1)),
+                              data=dict(
+                                  bankcard='6228410770613666666'))
+        self.assert200(rv)
         bankcard = self.session.query(Bankcard).get(bankcard.id)
         self.assertEqual(0, self._sum(bankcard.paybooks, 'bank_failed'))
         self.assertEqual(0, self._sum(bankcard.paybooks, 'bank_should_pay'))
+        bankcard2 = self.session.query(Bankcard).get(bankcard2.id)
         self.assertEqual(60, self._sum(bankcard2.paybooks, 'bank_should_pay'))
         self.assertEqual(0, self._sum(bankcard2.paybooks, 'bank_failed'))
         self._del_all_instance(PayBook)
