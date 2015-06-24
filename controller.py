@@ -1504,9 +1504,12 @@ def _paybook_query(person_idcard, item_names, peroid, negative=False):
                 except ValueError:
                     peroid = None
         query = query.filter(PayBook.in_peroid(peroid))
-    addr_ids = map(lambda a: a.id, current_user.address.descendants)
-    addr_ids.append(current_user.address.id)
-    query = query.filter(Person.address_id.in_(addr_ids))
+    if current_user.address is not None:
+        addr_ids = map(lambda a: a.id, current_user.address.descendants)
+        addr_ids.append(current_user.address.id)
+        query = query.filter(Person.address_id.in_(addr_ids))
+    else:
+        query = query.filter(false())
     query = query.group_by(PayBook.bankcard_id, item.id, PayBook.peroid)
     if negative:
         query = query.having(money < 0)
