@@ -957,7 +957,7 @@ def standard_bind(pk):
     return render_template('standard_bind.html', form=form)
 
 
-@app.route('/person/<int:pk>/page/<int:page>/perpage/<int:per_page>/search',
+@app.route('/person/<int:pk>/page/<int:page>/perpage/<int:per_page>/logsearch',
            methods=['GET'])
 @login_required
 def person_log_search(pk, page, per_page):
