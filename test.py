@@ -101,6 +101,10 @@ class TestBase(TestCase):
     def tearDown(self):
         self.db.session.remove()
 
+    @property
+    def authorized(self):
+        return self.client.get('/').status_code == 200
+
     def assert_authorized(self):
         rv = self.client.get('/index.html')
         self.assert200(rv)
@@ -940,7 +944,7 @@ class PersonTestCase(PersonTestBase):
         self.assertTrue(person.is_valid_standard_wages)
         bind()
         self.assertEqual(100, person.standard_wages[0].money)
-        self.session.delete(person.stand_assoces[0])
+        self.session.delete(person.standard_assoces[0])
         self.session.commit()
         self._del_all_instance(Person)
         self._del_all_instance(Standard)
@@ -1345,8 +1349,10 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
             books = filter(lambda b: b.item_is(item), books)
         return sum(map(lambda b: b.money, books))
 
-    def test_paybook_upload(self):
-        self.client.post('/login', data=dict(name='admin', password='admin'))
+    def casefun_paybook_upload(self):
+        if not self.authorized:
+            self.client.post(
+                '/login', data=dict(name='admin', password='admin'))
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
@@ -1400,8 +1406,10 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
 
-    def test_paybook_amend(self):
-        self.client.post('/login', data=dict(name='admin', password='admin'))
+    def casefun_paybook_amend(self):
+        if not self.authorized:
+            self.client.post(
+                '/login', data=dict(name='admin', password='admin'))
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
@@ -1460,8 +1468,10 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
 
-    def test_paybook_batch_success(self):
-        self.client.post('/login', data=dict(name='admin', password='admin'))
+    def casefun_paybook_batch_success(self):
+        if not self.authorized:
+            self.client.post(
+                '/login', data=dict(name='admin', password='admin'))
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
@@ -1519,8 +1529,10 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
 
-    def test_paybook_fail_correct(self):
-        self.client.post('/login', data=dict(name='admin', password='admin'))
+    def casefun_paybook_fail_correct(self):
+        if not self.authorized:
+            self.client.post(
+                '/login', data=dict(name='admin', password='admin'))
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
@@ -1571,8 +1583,10 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
 
-    def test_paybook_success_correct(self):
-        self.client.post('/login', data=dict(name='admin', password='admin'))
+    def casefun_paybook_success_correct(self):
+        if not self.authorized:
+            self.client.post(
+                '/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
@@ -1614,8 +1628,10 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
 
-    def test_paybook_search(self):
-        self.client.post('/login', data=dict(name='admin', password='admin'))
+    def casefun_paybook_search(self):
+        if not self.authorized:
+            self.client.post(
+                '/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
@@ -1669,8 +1685,10 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
 
-    def test_paybook_sys_search(self):
-        self.client.post('/login', data=dict(name='admin', password='admin'))
+    def casefun_paybook_sys_search(self):
+        if not self.authorized:
+            self.client.post(
+                '/login', data=dict(name='admin', password='admin'))
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
@@ -1718,8 +1736,10 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
 
-    def test_paybook_bankgrant(self):
-        self.client.post('/login', data=dict(name='admin', password='admin'))
+    def casefun_paybook_bankgrant(self):
+        if not self.authorized:
+            self.client.post(
+                '/login', data=dict(name='admin', password='admin'))
         self.client.get('/')
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
@@ -1758,6 +1778,11 @@ class PayBookTestCase(TestBase, AddressDataMixin, PersonAddRemoveMixin):
         self._del_all_instance(PayBook)
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
+
+    def test(self):
+        for i, name in enumerate(dir(self)):
+            if name.startswith('case'):
+                getattr(self, name)()
 
 
 def run_test():

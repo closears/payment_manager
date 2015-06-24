@@ -14,7 +14,8 @@ def _normal_from_line(line):
     idcard, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    if remark != 'normal':
+    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    if remark != 'normal'.decode('utf-8'):
         return False
     session = Session()
     try:
@@ -34,7 +35,8 @@ def _retire_from_line(line):
     idcard, retire_day, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    if remark != 'retire':
+    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    if remark != 'retire'.decode('utf-8'):
         return False
     retire_day = datetime.strptime(retire_day, '%Y-%m-%d').date()
     session = Session()
@@ -55,7 +57,8 @@ def _dead_from_line(line):
     idcard, deadday, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    if remark != 'dead':
+    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    if remark != 'dead'.decode('utf-8'):
         return False
     deadday = datetime.strptime(deadday, '%Y-%m-%d').date()
     session = Session()
@@ -76,7 +79,8 @@ def _check_bankcard_from_line(line):
     no, name, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    if remark != 'checkbankcard':
+    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    if remark != 'checkbankcard'.decode('utf-8'):
         return False
     session = Session()
     try:
@@ -92,7 +96,8 @@ def _check_person_from_line(line):
     idcard, name, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    if remark != 'checkperson':
+    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    if remark != 'checkperson'.decode('utf-8'):
         return False
     session = Session()
     try:
@@ -129,11 +134,40 @@ def _load_bankcard_from_line(line):
     return True
 
 
-def _load_paybooks():
+def _load_paybook_from_line(line):
+    '''
+    import file syntax:
+    bankcard_no,money,success,peroid,remark
+    6228410770613888888,75,1,2011-08-01,load_paybook
+    '''
     session = Session()
     print(PayBook, PayBookItem)
+    item_bank_should, item_bank_payed, item_bank_fail = map(
+        lambda name: session.query(PayBookItem).filter(
+            PayBookItem.name == name),
+        ('bank_should_pay', 'bank_payed', 'bank_failed'))
+    user = session.query(User).filter(User.name == 'admin').one()
+    bankcard_no, money, successed, peroid, remark = map(
+        lambda s: s.decode('utf-8'),
+        line.split(','))
+    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    if remark != 'load_paybook'.decode('utf-8'):
+        return False
+    bankcard = session.query(Bankcard).filter(
+        Bankcard.no == bankcard_no).first()
+    if bankcard is None or not bankcard.binded:
+        return False
+    if successed == '1':
+        to_item = item_bank_payed
+    else:
+        to_item = item_bank_fail
+    session.add(PayBook.create_tuple(
+        bankcard.owner_id, item_bank_should.id, to_item.id,
+        bankcard.id, bankcard.id, float(money),
+        datetime.strptime(peroid, '%Y-%m-%d'), user.id))
     session.commit()
     session.close()
+    return True
 
 
 if __name__ == '__main__':
@@ -151,7 +185,8 @@ if __name__ == '__main__':
         'dead\n' +
         'checkbankcard\n' +
         'checkperson\n' +
-        'load_bankcard\n')
+        'load_bankcard\n' +
+        'load_paybook\n')
     parser.add_argument('--file', '-f',
                         dest='filename', help='the data file')
 
@@ -177,6 +212,8 @@ if __name__ == '__main__':
                     successed = _check_person_from_line(line)
                 if args.operation == 'load_bankcard':
                     successed = _load_bankcard_from_line(line)
+                if args.operation == 'load_paybook':
+                    successed = _load_paybook_from_line(line)
                 if not successed:
                     messages += messages_format.format(no=no, content=line)
                     fail_count += 1

@@ -89,6 +89,10 @@ class User(db.Model):
     def password(self, val):
         self._password = md5(val).hexdigest()
 
+    @password.expression
+    def password(cls):
+        return cls._password.label('password')
+
     @hybrid_method
     def has_role(self, rolename):
         return rolename in [role.name for role in self.roles]
@@ -161,6 +165,14 @@ class Address(db.Model):
     def descendant_of(self, address):
         return address and self in address.descendants
 
+    @descendant_of.expression
+    def descendant_of(cls, address):
+        if not address or not address.descendants:
+            return false()
+        return cls.id.in_(map(
+            lambda addr: addr.id,
+            address.descendants))
+
     @property
     def ancestors(self):
         ancestors = []
@@ -174,6 +186,14 @@ class Address(db.Model):
     def ancestor_of(self, address):
         return address and self in address.ancestors
 
+    @ancestor_of.expression
+    def ancestor_of(cls, address):
+        if not address or not address.ancestors:
+            return false()
+        return cls.id.in_(map(
+            lambda addr: addr.id,
+            address.ancestors))
+
 
 class PersonStandardAssoc(db.Model):
     __tablename__ = 'person_standard'
@@ -183,7 +203,7 @@ class PersonStandardAssoc(db.Model):
         db.Integer,
         db.ForeignKey('persons.id')
     )
-    person = db.relationship('Person', backref='stand_assoces')
+    person = db.relationship('Person', backref='standard_assoces')
     standard_id = db.Column(
         'standard_id',
         db.Integer,
@@ -237,16 +257,34 @@ class PersonStandardAssoc(db.Model):
             raise DateError("end date can't earler than start date")
         self._end_date = val
 
+    @hybrid_method
+    def effective_before(self, last_date):
+        return (self.end_date is None or self.end_date >= last_date) and\
+            self.start_date <= last_date
+
+    @effective_before.expression
+    def effective_before(cls, last_date):
+        return and_(
+            or_(
+                cls.end_date.is_(None),
+                cls.end_date >= last_date),
+            cls.start_date <= last_date)
+
     @hybrid_property
     def effective(self):
-        return self.end_date is None or\
-            self.end_date >= datetime.datetime.now().date()
+        return self.effective_before(datetime.datetime.now().date())
 
     @effective.expression
     def effective(cls):
-        return or_(
-            self.end_date.is_(None),
-            self.end_date >= datetime.datetime.now().date()
+        return cls.effective_before(datetime.datetime.now().date())
+
+    @property
+    def total_standard(self, person, peroid):
+        money = 0.0
+        for assoc in person.standard_assoces:
+            if assoc.effective_before(peroid):
+                money += assoc.standard.money
+        return money
 
 
 class DateError(RuntimeError):
@@ -336,11 +374,14 @@ class Person(db.Model):
     def birthday(self):
         return self._birthday
 
+    @birthday.expression
+    def birthday(cls):
+        return cls._birthday.label('birthday')
+
     @birthday.setter
     def birthday(self, val):
         if isinstance(val, str):
-            self._birthday = datetime.datetime.strptime(
-                val, '%Y-%m-%d').date()
+            self._birthday = datetime.datetime.strptime(val, '%Y-%m-%d').date()
         else:
             self._birthday = val
 
@@ -351,11 +392,10 @@ class Person(db.Model):
             self.birthday.year, self.birthday.month, 1) + delta
         return max(retire_day, _IMPLEMENT_DATE)
 
-    @hybrid_method
-    def __status_str(self, index):
-        return self.STATUS_CHOICES[index][0]
+    @classmethod
+    def __status_str(cls, index):
+        return cls.STATUS_CHOICES[index][0]
 
-    @hybrid_method
     def __status_in(self, *args):
         return self.status in (self.__status_str(i) for i in args)
 
@@ -430,12 +470,11 @@ class Person(db.Model):
     def status(cls):
         return cls._status.label('status')
 
-    @hybrid_property
+    @property
     def can_reg(self):
         if self.status is not None:
-            return false()
-        now = datetime.datetime.now()
-        now = datetime.date(now.year, now.month, now.day)
+            return False
+        now = datetime.datetime.now().date()
         earlist_engage_day = datetime.date(
             self.birthday.year + _MIN_ENGAGE_IN_AGE, self.birthday.month,
             self.birthday.day)
@@ -477,13 +516,13 @@ class Person(db.Model):
     def is_valid_standard_wages(self):
         if self.status != self.__status_str(self.NORMAL_RETIRE):
             return False
-        for assoc in self.stand_assoces:
+        for assoc in self.standard_assoces:
             if assoc.start_date < self.retire_day:
                 return False
-        if not self.stand_assoces:
+        if not self.standard_assoces:
             return True
         date_lst = map(lambda a: (a.start_date, a.end_date),
-                       self.stand_assoces)
+                       self.standard_assoces)
         date_lst.sort(key=lambda x: x[0])
 
         def f(x, y):
