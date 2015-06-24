@@ -4,9 +4,9 @@ from datetime import datetime
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import NoResultFound
 from run import db, init
-from models import Person, Bankcard, User
+from models import Person, Bankcard, User, PayBook, PayBookItem
 
-init()
+
 Session = sessionmaker(bind=db.engine)
 
 
@@ -128,7 +128,16 @@ def _load_bankcard_from_line(line):
     session.close()
     return True
 
+
+def _load_paybooks():
+    session = Session()
+    print(PayBook, PayBookItem)
+    session.commit()
+    session.close()
+
+
 if __name__ == '__main__':
+    init()
     parser = argparse.ArgumentParser(
         description='Utils help update/insert data to db')
     parser.add_argument(

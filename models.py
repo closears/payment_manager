@@ -215,6 +215,10 @@ class PersonStandardAssoc(db.Model):
     def start_date(self):
         return self._start_date
 
+    @start_date.expression
+    def start_date(cls):
+        return cls._start_date.label('start_date')
+
     @start_date.setter
     def start_date(self, val):
         self._start_date = val
@@ -222,6 +226,10 @@ class PersonStandardAssoc(db.Model):
     @hybrid_property
     def end_date(self):
         return self._end_date
+
+    @end_date.expression
+    def end_date(self):
+        return self._end_date.label('end_date')
 
     @end_date.setter
     def end_date(self, val):
@@ -231,8 +239,14 @@ class PersonStandardAssoc(db.Model):
 
     @hybrid_property
     def effective(self):
+        return self.end_date is None or\
+            self.end_date >= datetime.datetime.now().date()
+
+    @effective.expression
+    def effective(cls):
         return or_(
-            self.end_date.is_(None), self.end_date >= datetime.datetime.now())
+            self.end_date.is_(None),
+            self.end_date >= datetime.datetime.now().date()
 
 
 class DateError(RuntimeError):
