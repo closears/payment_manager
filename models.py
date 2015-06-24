@@ -629,6 +629,14 @@ class PayBookItem(db.Model):
     def descendant_of(self, item):
         return item and self in item.descendants
 
+    @descendant_of.expression
+    def descendant_of(cls, item):
+        if not item or not item.descendants:
+            return false()
+        return cls.id.in_(map(
+            lambda item: item.id,
+            item.descendants))
+
     @property
     def ancestors(self):
         ancestors = []
@@ -641,6 +649,14 @@ class PayBookItem(db.Model):
     @hybrid_method
     def ancestor_of(self, item):
         return item and self in item.ancestors
+    
+    @ancestor_of.expression
+    def ancestor_of(cls, item):
+        if not item or not item.ancestors:
+            return false()
+        return cls.id.in_(map(
+            lambda item: item.id,
+            item.ancestors))
 
 
 class FormatError(RuntimeError):
@@ -880,6 +896,10 @@ class Note(db.Model):
     @hybrid_property
     def end_date(self):
         return self._end_date
+
+    @end_date.expression
+    def end_date(cls):
+        return cls._end_date.label('end_date')
 
     @end_date.setter
     def end_date(self, val):
