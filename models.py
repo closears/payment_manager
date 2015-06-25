@@ -241,6 +241,8 @@ class PersonStandardAssoc(db.Model):
 
     @start_date.setter
     def start_date(self, val):
+        if self.end_date is not None and val > self.end_date:
+            raise DateError("start date can't later than end date")
         self._start_date = val
 
     @hybrid_property
@@ -253,7 +255,7 @@ class PersonStandardAssoc(db.Model):
 
     @end_date.setter
     def end_date(self, val):
-        if self.start_date is not None and val <= self.start_date:
+        if self.start_date is not None and val < self.start_date:
             raise DateError("end date can't earler than start date")
         self._end_date = val
 
@@ -427,16 +429,21 @@ class Person(db.Model):
             self._status = self.__status_str(self.DEAD_UNRETIRE)
         elif self.can_dead_retire:
             self._status = self.__status_str(self.DEAD_RETIRE)
+            for assoc in self.standard_assoces:
+                assoc.end_date = max(dead_day, assoc.start_date)
         else:
             raise PersonStatusError('person can not be dead')
         self.dead_day = dead_day
         return self
 
-    def abort(self):
+    def abort(self, abort_date=None):
         if self.can_abort_normal:
             self._status = self.__status_str(self.ABROT_UNRETIRE)
         elif self.can_abort_retire:
             self._status = self.__status_str(self.ABORT_RETIRE)
+            for assoc in self.standard_assoces:
+                now = datetime.datetime.now().date()
+                assoc.end_date = max(abort_date or now, assoc.start_date)
         else:
             raise PersonStatusError('Person can not be abort')
         return self
@@ -909,19 +916,28 @@ class Note(db.Model):
             raise DateError("end date can't earler than begin date")
         self._end_date = val
 
+    @hybrid_method
+    def effective_before(self, date):
+        return self._effective and\
+            self.start_date <= date and (
+                self.end_date is None or self.end_date >= date)
+
+    @effective_before.expression
+    def effective_before(cls, date):
+        return and_(
+            cls._effective.is_(True),
+            cls._start_date <= date,
+            or_(
+                cls._end_date.is_(None),
+                cls._end_date >= date))
+
     @hybrid_property
     def effective(self):
-        return self._effective and\
-            self.start_date <= datetime.datetime.now().date() and\
-            (self.end_date is None or
-             self.end_date >= datetime.datetime.now().date())
+        return self.effective_before(datetime.datetime.now().date())
 
     @effective.expression
     def effective(cls):
-        return and_(cls._effective.is_(True),
-                    cls.start_date <= datetime.datetime.now().date(),
-                    or_(cls.end_date.is_(None),
-                        cls.end_date >= datetime.datetime.now().date()))
+        return cls.effective_before(datetime.datetime.now().date())
 
     @hybrid_method
     def disable(self):
@@ -961,8 +977,3 @@ def paginate(query, page, per_page, error_out=True):
     else:
         total = query.order_by(None).count()
     return Pagination(query, page, per_page, total, items)
-
-
-def test():
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
-    db.create_all()
