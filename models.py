@@ -429,8 +429,11 @@ class Person(db.Model):
             self._status = self.__status_str(self.DEAD_UNRETIRE)
         elif self.can_dead_retire:
             self._status = self.__status_str(self.DEAD_RETIRE)
+            self.standard_assoces = filter(
+                lambda assoc: assoc.start_date <= dead_day,
+                self.standard_assoces)
             for assoc in self.standard_assoces:
-                assoc.end_date = max(dead_day, assoc.start_date)
+                assoc.end_date = dead_day
         else:
             raise PersonStatusError('person can not be dead')
         self.dead_day = dead_day
@@ -441,9 +444,12 @@ class Person(db.Model):
             self._status = self.__status_str(self.ABROT_UNRETIRE)
         elif self.can_abort_retire:
             self._status = self.__status_str(self.ABORT_RETIRE)
+            self.standard_assoces = filter(
+                lambda assoc: assoc.start_date <= abort_date,
+                self.standard_assoces)
             for assoc in self.standard_assoces:
                 now = datetime.datetime.now().date()
-                assoc.end_date = max(abort_date or now, assoc.start_date)
+                assoc.end_date = abort_date or now
         else:
             raise PersonStatusError('Person can not be abort')
         return self
@@ -528,13 +534,28 @@ class Person(db.Model):
                 return False
         if not self.standard_assoces:
             return True
-        date_lst = map(lambda a: (a.start_date, a.end_date),
-                       self.standard_assoces)
-        date_lst.sort(key=lambda x: x[0])
+        standard_ids = set(map(
+            lambda standard: standard.id,
+            self.standard_assoces))
+        for id in standard_ids:
+            date_lst = map(lambda a: (a.start_date, a.end_date),
+                           filter(
+                               lambda standard: standard.id == id,
+                               self.standard_assoces))
+            date_lst.sort(key=lambda x: x[0])
+            if len(date_lst) == 1:
+                return True
 
-        def f(x, y):
-            return (x[1] or False) and x[1] <= y[0] and y
-        return reduce(lambda x, y: x and f(x, y), date_lst) and True
+            def f(x, y):
+                START_DATE, END_DATE = 0, 1
+                if x[END_DATE] is None and y[START_DATE] is not None:
+                    return False
+                if x[END_DATE] > y[START_DATE]:
+                    return False
+                return True
+            if not reduce(lambda x, y: x and f(x, y), date_lst):
+                return False
+        return True
 
 
 class PersonStatusError(RuntimeError):

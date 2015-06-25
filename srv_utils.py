@@ -6,7 +6,7 @@ from sqlalchemy.orm.exc import NoResultFound
 from run import db, init
 from models import Person, Bankcard, User, PayBook, PayBookItem
 
-
+init()
 Session = sessionmaker(bind=db.engine)
 
 
@@ -14,7 +14,7 @@ def _normal_from_line(line):
     idcard, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    remark = remark.rstrip('\r').rstrip('\n')
     if remark != 'normal'.decode('utf-8'):
         return False
     session = Session()
@@ -32,10 +32,10 @@ def _normal_from_line(line):
 
 
 def _retire_from_line(line):
-    idcard, retire_day, remark = map(
+    idcard, retire_day, personal_wage, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    remark = remark.rstrip('\r').rstrip('\n')
     if remark != 'retire'.decode('utf-8'):
         return False
     retire_day = datetime.strptime(retire_day, '%Y-%m-%d').date()
@@ -47,7 +47,12 @@ def _retire_from_line(line):
         return False
     if not person.can_retire:
         return False
-    person.retire(retire_day)
+    try:
+        person.retire(retire_day)
+        person.personal_wage = float(personal_wage)
+    except Exception as e:
+        print('age error:{}'.format(line))
+        raise e
     session.commit()
     session.close()
     return True
@@ -57,7 +62,7 @@ def _dead_from_line(line):
     idcard, deadday, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    remark = remark.rstrip('\r').rstrip('\n')
     if remark != 'dead'.decode('utf-8'):
         return False
     deadday = datetime.strptime(deadday, '%Y-%m-%d').date()
@@ -79,7 +84,7 @@ def _check_bankcard_from_line(line):
     no, name, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    remark = remark.rstrip('\r').rstrip('\n')
     if remark != 'checkbankcard'.decode('utf-8'):
         return False
     session = Session()
@@ -96,7 +101,7 @@ def _check_person_from_line(line):
     idcard, name, remark = map(
         lambda s: s.decode('utf-8'),
         line.split(','))
-    remark = remark.rstrip('\r', '').rstrip('\n', '')
+    remark = remark.rstrip('\r').rstrip('\n')
     if remark != 'checkperson'.decode('utf-8'):
         return False
     session = Session()
@@ -171,7 +176,6 @@ def _load_paybook_from_line(line):
 
 
 if __name__ == '__main__':
-    init()
     parser = argparse.ArgumentParser(
         description='Utils help update/insert data to db')
     parser.add_argument(
