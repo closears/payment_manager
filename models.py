@@ -521,10 +521,6 @@ class Person(db.Model):
     def can_normal(self):
         return self.__status_is(self.REG)
 
-    @can_normal.expression
-    def can_normal(cls):
-        return cls.__status_is(cls.REG)
-
     @hybrid_property
     def can_abort_normal(self):
         return self.__status_is(self.NORMAL)
@@ -552,6 +548,14 @@ class Person(db.Model):
     @hybrid_property
     def can_dead_unretire(self):
         return self.__status_in(self.NORMAL)
+
+    @hybrid_property
+    def can_dead(self):
+        return self.can_dead_retire or self.can_dead_unretire
+
+    @can_dead.expression
+    def can_dead(cls):
+        return or_(cls.can_dead_retire, cls.can_dead_unretire)
 
     @property
     def is_valid_standard_wages(self):
