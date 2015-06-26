@@ -32,7 +32,7 @@ class UserRoleAssoc(db.Model):
 
     def __str__(self):
         return "{user},{role}".decode('utf-8').format(
-            user=self.user.name, role=self.role.name)
+            user=self.user.name, role=self.role.name).encode('utf-8')
 
 
 class User(db.Model):
@@ -58,7 +58,7 @@ class User(db.Model):
             address=self.address_id)
 
     def __str__(self):
-        return "{}".decode('utf-8').format(self.name)
+        return "{}".decode('utf-8').format(self.name).encode('utf-8')
 
     def is_active(self):
         return self.active
@@ -118,7 +118,7 @@ class Role(db.Model):
         return "<Role(name='name')>".format(self.name)
 
     def __str__(self):
-        return "{}".decode('utf-8').format(self.name)
+        return "{}".decode('utf-8').format(self.name).encode('utf-8')
 
 
 class Address(db.Model):
@@ -146,7 +146,7 @@ class Address(db.Model):
         )
 
     def __str__(self):
-        return "{name}".decode('utf-8').format(name=self.name)
+        return "{name}".decode('utf-8').format(name=self.name).encode('utf-8')
 
     @property
     def descendants(self):
@@ -227,8 +227,8 @@ class PersonStandardAssoc(db.Model):
                 person=self.person.name,
                 standard=self.standard.name,
                 start_date=self.start_date,
-                end_date=self.end_date if self.end_date else ''
-        )
+                end_date=self.end_date if self.end_date else '').encode(
+                    'utf-8')
 
     @hybrid_property
     def start_date(self):
@@ -361,8 +361,7 @@ class Person(db.Model):
         return '{idcard},{name},{status}'.decode('utf-8').format(
             idcard=self.idcard,
             name=self.name,
-            status=self.status
-        )
+            status=self.status).encode('utf-8')
 
     @hybrid_property
     def personal_wage(self):
@@ -522,6 +521,10 @@ class Person(db.Model):
     def can_normal(self):
         return self.__status_is(self.REG)
 
+    @can_normal.expression
+    def can_normal(cls):
+        return cls.__status_is(cls.REG)
+
     @hybrid_property
     def can_abort_normal(self):
         return self.__status_is(self.NORMAL)
@@ -637,7 +640,7 @@ class Standard(db.Model):
         return '{name},{money}'.decode('utf-8').format(
             name=self.name,
             money=self.money
-        )
+        ).encode('utf-8')
 
 
 class Bankcard(db.Model):
@@ -662,7 +665,7 @@ class Bankcard(db.Model):
     def __str__(self):
         return '{no}({name})'.decode('utf-8').format(
             no=self.no,
-            name=self.name)
+            name=self.name).encode('utf-8')
 
     @hybrid_property
     def binded(self):
@@ -688,7 +691,7 @@ class PayBookItem(db.Model):
             parent=self.parent_id)
 
     def __str__(self):
-        return '{name}'.decode('utf-8').format(name=self.name)
+        return '{name}'.decode('utf-8').format(name=self.name).encode('utf-8')
 
     @property
     def descendants(self):
@@ -777,8 +780,7 @@ class PayBook(db.Model):
                 bankcard=self.bankcard,
                 item=self.item,
                 money=self.money,
-                peroid=self.peroid
-        )
+                peroid=self.peroid).encode('utf-8')
 
     @hybrid_property
     def item(self):
@@ -920,8 +922,7 @@ class OperationLog(db.Model):
             operator=self.operator.name,
             method=self.method,
             remark=self.remark,
-            time=self.time
-        )
+            time=self.time).encode('utf-8')
 
     __log_templates = {}
 
