@@ -7,7 +7,7 @@ from hashlib import md5
 from dateutil.relativedelta import relativedelta
 from flask import Flask, abort
 from jinja2 import Template
-from sqlalchemy import or_, and_, false, exists
+from sqlalchemy import or_, and_, false, exists, select, func
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from flask_sqlalchemy import SQLAlchemy, Pagination
 
@@ -280,13 +280,22 @@ class PersonStandardAssoc(db.Model):
     def effective(cls):
         return cls.effective_before(datetime.datetime.now().date())
 
-    @property
+    @hybrid_method
     def total_standard(self, person, peroid):
         money = 0.0
         for assoc in person.standard_assoces:
             if assoc.effective_before(peroid):
                 money += assoc.standard.money
         return money
+
+    @total_standard.expression
+    def total_standard(cls, person, peroid):
+        return select(func.sum(Standard.money)).join(
+            cls, cls.standard_id == Standard.id).where(
+                and_(
+                    cls.person_id == person.id,
+                    cls.effective_before(peroid))).label(
+                        'total_standard')
 
 
 class DateError(RuntimeError):
@@ -556,6 +565,32 @@ class Person(db.Model):
             if not reduce(lambda x, y: x and f(x, y), date_lst):
                 return False
         return True
+
+    @hybrid_method
+    def total_wage_before(self, last_date):
+        result = self.personal_wage
+        for assoc in self.standard_assoces:
+            if assoc.effective_before(last_date):
+                result += assoc.standard.money
+        return result
+
+    @total_wage_before.expression
+    def total_wage_before(cls, last_date):
+        Assoc = PersonStandardAssoc
+        return select(
+            cls.personal_wage + func.sum(Standard.money)).join(
+                Assoc, Assoc.person_id == cls.id).join(
+                    Standard, Standard.id == Assoc.standard_id).where(
+                        Assoc.effective_before(last_date)).label(
+                            'total_wage_before')
+
+    @hybrid_property
+    def total_wage(self):
+        return self.total_wage_before(datetime.datetime.now().date())
+
+    @total_wage.expression
+    def total_wage(cls):
+        return cls.total_wage_before(datetime.datetime.now().date())
 
 
 class PersonStatusError(RuntimeError):
