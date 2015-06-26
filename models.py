@@ -27,8 +27,8 @@ class UserRoleAssoc(db.Model):
     role = db.relationship('Role', backref='assoc')
 
     def __repr__(self):
-        return "<UserRoleAssoc(user={user},role={role})>".format(
-            user=repr(self.user), role=repr(self.role))
+        return "<UserRoleAssoc(user_id={user},role_id={role})>".format(
+            user=self.user_id, role=self.role_id)
 
     def __str__(self):
         return "{user},{role}".decode('utf-8').format(
@@ -51,12 +51,11 @@ class User(db.Model):
 
     def __repr__(self):
         return "<User(name='{name}',_password='{password}',active={active}\
-        address={address})>".format(
+        address_id={address})>".format(
             name=self.name,
             password=self.password,
             active=self.active,
-            address=repr(self.address)
-        )
+            address=self.address_id)
 
     def __str__(self):
         return "{}".decode('utf-8').format(self.name)
@@ -140,9 +139,9 @@ class Address(db.Model):
         return not self.__eq__(other)
 
     def __repr__(self):
-        return "<Address(name='{name}',parent={parent},no='{no}')>".format(
-            name=self.name,
-            parent=repr(self.parent),
+        return "<Address(name='{name}',parent_id={parent},no='{no}')>".format(
+            name=self.name.encode('utf-8'),
+            parent=self.parent_id,
             no=self.no
         )
 
@@ -214,10 +213,10 @@ class PersonStandardAssoc(db.Model):
     _end_date = db.Column('end_date', db.Date)
 
     def __repr__(self):
-        return "<PersonStandardAssoc(standard={standard},person={person},\
+        return "<PersonStandardAssoc(standard_id={standard},person_id={person},\
         _start_date={start_date},_end_date={end_date})>".format(
-            standard=repr(self.standard),
-            person=repr(self.person),
+            standard=self.standard_id,
+            person=self.person_id,
             start_date=self.start_date,
             end_date=self.end_date
         )
@@ -345,19 +344,18 @@ class Person(db.Model):
                             default=datetime.datetime.now)
 
     def __repr__(self):
-        return "<Person(idcard='{idcard};,name='{name}',address={address},\
+        return "<Person(idcard='{idcard};,name='{name}',address_id={address},\
         address_detail='{address_detail}',securi_no='{securi_no}',\
         create_time={create_time},status='{status}'\
         ,birthday={birthday})>".format(
             idcard=self.idcard,
-            name=self.name,
-            address=repr(self.address),
-            address_detail=self.address_detail,
+            name=self.name.encode('utf-8'),
+            address=self.address_id,
+            address_detail=self.address_detail.encode('utf-8'),
             securi_no=self.securi_no,
-            create_time=repr(self.create_time),
+            create_time=self.create_time,
             status=self.status,
-            birthday=repr(self.birthday)
-        )
+            birthday=self.birthday)
 
     def __str__(self):
         return '{idcard},{name},{status}'.decode('utf-8').format(
@@ -407,12 +405,21 @@ class Person(db.Model):
     def __status_str(cls, index):
         return cls.STATUS_CHOICES[index][0]
 
+    @hybrid_method
     def __status_in(self, *args):
         return self.status in (self.__status_str(i) for i in args)
+
+    @__status_in.expression
+    def __status_in(cls, *args):
+        return cls._status.in_(map(lambda i: cls.__status_str(i), args))
 
     @hybrid_method
     def __status_is(self, index):
         return self.status == self.__status_str(index)
+
+    @__status_is.expression
+    def __status_is(cls, index):
+        return cls._status == cls.__status_str(index)
 
     def reg(self):
         if not self.can_reg:
@@ -438,7 +445,7 @@ class Person(db.Model):
             self._status = self.__status_str(self.DEAD_UNRETIRE)
         elif self.can_dead_retire:
             self._status = self.__status_str(self.DEAD_RETIRE)
-            self.standard_assoces = filter(
+            self.standard_assoces = filter(  # remove invalid standard
                 lambda assoc: assoc.start_date <= dead_day,
                 self.standard_assoces)
             for assoc in self.standard_assoces:
@@ -453,7 +460,7 @@ class Person(db.Model):
             self._status = self.__status_str(self.ABROT_UNRETIRE)
         elif self.can_abort_retire:
             self._status = self.__status_str(self.ABORT_RETIRE)
-            self.standard_assoces = filter(
+            self.standard_assoces = filter(  # remove invalid standard
                 lambda assoc: assoc.start_date <= abort_date,
                 self.standard_assoces)
             for assoc in self.standard_assoces:
@@ -492,7 +499,7 @@ class Person(db.Model):
     def status(cls):
         return cls._status.label('status')
 
-    @property
+    @hybrid_property
     def can_reg(self):
         if self.status is not None:
             return False
@@ -501,6 +508,15 @@ class Person(db.Model):
             self.birthday.year + _MIN_ENGAGE_IN_AGE, self.birthday.month,
             self.birthday.day)
         return now > earlist_engage_day
+
+    @can_reg.expression
+    def can_reg(cls):
+        now = datetime.datetime.now()
+        last_date = datetime.date(
+            now.year - _MIN_ENGAGE_IN_AGE, now.month, now.day)
+        return and_(
+            cls._status.is_(None),
+            cls._birthday < last_date)
 
     @hybrid_property
     def can_normal(self):
@@ -613,7 +629,7 @@ class Standard(db.Model):
 
     def __repr__(self):
         return "<Standard(name='{name}', money={money})>".format(
-            name=self.name,
+            name=self.name.encode('utf-8'),
             money=self.money
         )
 
@@ -639,10 +655,9 @@ class Bankcard(db.Model):
 
     def __repr__(self):
         return "<Bankcard(no='{no}',name='{name}',owner_id={owner})>".format(
-            no=self.no,
-            name=self.name,
-            owner=self.owner and self.owner.id or None
-        )
+            no=self.no.encode('utf-8'),
+            name=self.name.encode('utf-8'),
+            owner=self.owner_id)
 
     def __str__(self):
         return '{no}({name})'.decode('utf-8').format(
@@ -668,10 +683,9 @@ class PayBookItem(db.Model):
         'PayBookItem', backref='childs', remote_side=[id])
 
     def __repr__(self):
-        return "<PayBookItem(name='{name}',parent={parent})>".format(
-            name=self.name,
-            parent=self.parent.__repr__()
-        )
+        return "<PayBookItem(name='{name}',parent_id={parent})>".format(
+            name=self.name.encode('utf-8'),
+            parent=self.parent_id)
 
     def __str__(self):
         return '{name}'.decode('utf-8').format(name=self.name)
@@ -748,14 +762,13 @@ class PayBook(db.Model):
     remark = db.Column(db.String)
 
     def __repr__(self):
-        return "<PayBook(money='{money}',person={person},bankcard={bankcard},\
-        item={item},peroid={peroid})>".format(
-            money=self.money,
-            person=repr(self.person),
-            bankcard=repr(self.bankcard),
-            item=repr(self.item),
-            peroid=self.peroid
-        )
+        return "<PayBook(money='{money}',person_id={person}," +\
+            "bankcard_id={bankcard},item_id={item},peroid={peroid})>".format(
+                money=self.money,
+                person=self.person_id,
+                bankcard=self.bankcard_id,
+                item=self.item_id,
+                peroid=self.peroid)
 
     def __str__(self):
         return '{person},{bankcard},{item},{money},{peroid}'.decode(
@@ -894,11 +907,11 @@ class OperationLog(db.Model):
         db.DateTime, default=datetime.datetime.now, nullable=False)
 
     def __repr__(self):
-        return "<OperationLog(operator={operator},method='{method}',\
+        return "<OperationLog(operator_id={operator},method='{method}',\
         remark='{remark}',time={time})>".format(
-            operator=repr(self.operator),
+            operator=self.operator_id,
             method=self.method,
-            remark=self.remark,
+            remark=self.remark.encode('utf-8'),
             time=self.time
         )
 
