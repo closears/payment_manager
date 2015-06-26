@@ -599,13 +599,13 @@ class Person(db.Model):
 
     @total_wage_before.expression
     def total_wage_before(cls, last_date):
-        Assoc = PersonStandardAssoc
+        assoc_alias = PersonStandardAssoc.effective_before(last_date).label(
+            'assoc_alias')
         return select(
-            cls.personal_wage + func.sum(Standard.money)).join(
-                Assoc, Assoc.person_id == cls.id).join(
-                    Standard, Standard.id == Assoc.standard_id).where(
-                        Assoc.effective_before(last_date)).label(
-                            'total_wage_before')
+            [cls.personal_wage + func.sum(Standard.money)]).join(
+                assoc_alias, assoc_alias.person_id == Person.id).join(
+                    Standard, Standard.id == assoc_alias.standard_id).label(
+                        'total_wage_before')
 
     @hybrid_property
     def total_wage(self):
