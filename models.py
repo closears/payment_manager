@@ -530,6 +530,11 @@ class Person(db.Model):
         return self.__status_in(self.NORMAL_RETIRE, self.SUSPEND_RETIRE)
 
     @hybrid_property
+    def can_abort(self):
+        return self.__status_in(self.NORMAL, self.NORMAL_RETIRE,
+                                self.SUSPEND_RETIRE)
+
+    @hybrid_property
     def can_retire(self):
         return self.__status_is(self.NORMAL)
 

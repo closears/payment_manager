@@ -228,3 +228,5 @@ if __name__ == '__main__':
     except IOError:
         print('file with name:{} does not exists'.format(
             args.filename))
+    except Exception as e:
+        print('Unkonw error, message is {}'.format(e.message))
