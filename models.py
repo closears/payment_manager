@@ -289,12 +289,12 @@ class PersonStandardAssoc(db.Model):
 
     @total_standard.expression
     def total_standard(cls, person, peroid):
-        return select(func.sum(Standard.money)).join(
-            cls, cls.standard_id == Standard.id).where(
-                and_(
+        return select([func.sum(Standard.money).label('money')]).where(
+            exists().where(and_(
+                Standard.id == cls.standard_id,
+                exists().where(and_(
                     cls.person_id == person.id,
-                    cls.effective_before(peroid))).label(
-                        'total_standard')
+                    cls.effective_before(peroid)))))).c.money
 
 
 class DateError(RuntimeError):
@@ -599,13 +599,16 @@ class Person(db.Model):
 
     @total_wage_before.expression
     def total_wage_before(cls, last_date):
-        assoc_alias = PersonStandardAssoc.effective_before(last_date).label(
-            'assoc_alias')
-        return select(
-            [cls.personal_wage + func.sum(Standard.money)]).join(
-                assoc_alias, assoc_alias.person_id == Person.id).join(
-                    Standard, Standard.id == assoc_alias.standard_id).label(
-                        'total_wage_before')
+        Assoc = PersonStandardAssoc
+        expression = select(
+            [func.sum(Standard.money).label('money')]).where(
+                exists().where(and_(
+                    Assoc.standard_id == Standard.id,
+                    exists().where(and_(
+                        Assoc.person_id == cls.id,
+                        Assoc.effective_before(last_date)))))).c.money +\
+            cls.personal_wage
+        return expression.label('total_wage_before')
 
     @hybrid_property
     def total_wage(self):
