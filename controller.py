@@ -36,7 +36,7 @@ from forms import (
 
 def __find_obj_or_404(cls, id_field, pk):
     try:
-        obj = db.session.query(cls).filter(id_field == pk).one()
+        obj = cls.query.filter(id_field == pk).one()
     except NoResultFound:
         flash(unicode('Object witt pk:{} was not find').format(pk))
         abort(404)
@@ -798,7 +798,7 @@ def person_normal_reg(pk):
 def person_batch_normal():
     form = PeroidForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        persons = db.session.query(Person).filter(
+        persons = Person.query.filter(
             Person.can_normal.is_(True)).filter(
                 Person.birthday >= form.start_date.data).filter(
                     Person.birthday <= form.end_date.data).all()
