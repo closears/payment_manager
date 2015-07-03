@@ -562,6 +562,10 @@ class Person(db.Model):
     def can_dead(cls):
         return or_(cls.can_dead_retire, cls.can_dead_unretire)
 
+    @hybrid_property
+    def can_pay(self):
+        return self.__status_is(self.NORMAL_RETIRE)
+
     @property
     def is_valid_standard_wages(self):
         if self.status != self.__status_str(self.NORMAL_RETIRE):
