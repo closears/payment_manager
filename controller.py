@@ -12,6 +12,8 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
+from jinja2 import Template
+from werkzeug.local import LocalStack
 import flask
 from flask import (
     render_template, session, request, flash, abort, redirect, current_app,
@@ -122,6 +124,115 @@ Principal(app)
 admin_required = Permission(RoleNeed('admin')).require(403)
 person_admin_required = Permission(RoleNeed('person_admin')).require(403)
 pay_admin_required = Permission(RoleNeed('pay_admin')).require(403)
+
+
+class DbLogger(object):
+    __val_filters = []  # class global val filters
+    __log_stack = LocalStack()
+
+    @classmethod
+    def add_val_filter(cls, val_filter):
+        '''
+        add a val filter to DbLogger
+        val_filter: the two args fun, arg0 is old_val, arg1 is new_val
+            return true or false.
+        return the DbLogger class it self.
+        '''
+        cls.__val_filters.append(val_filter)
+        return cls
+
+    @classmethod
+    def remove_val_filter(cls, val_filter):
+        '''
+        remove val filter
+        '''
+        try:
+            cls.__val_filters.remove(val_filter)
+        except ValueError:
+            pass
+        return cls
+
+    @classmethod
+    def __filter(cls, old_val, new_val):
+        '''
+        filter the val,
+        if return False, the logger not log the change
+        '''
+        if callable(old_val) or callable(new_val):
+            return False
+        if not cls.__val_filters:
+            if old_val is None:
+                return False
+            if old_val == new_val:
+                return False
+        else:
+            for val_filter in cls.__val_filters:
+                if not val_filter(old_val, new_val):
+                    return False
+        return True
+
+    @classmethod
+    def log_template(cls, template=None):
+        '''
+        make a template decorator for a controller fun.
+        template: template content
+        '''
+        def decorator(f):
+            @wraps(f)
+            def wrapper(*args, **kwargs):
+                cls.__log_stack.push(template and Template(template))
+                result = f(*args, **kwargs)
+                remark = cls.__log_stack.pop()
+                db.session.add(OperationLog(
+                    operator_id=current_user.id,
+                    method=f.__name__,
+                    remark=remark))
+                db.session.commit()
+                return result
+            return wrapper
+        return decorator
+
+    @classmethod
+    def logs(cls, filter_fun, *types):
+        '''
+        log the attr change of object which instance of type in types.
+        filter_fun: arg0 is old_val, arg1 is new_val,
+            return False if not need log
+        return a decorator
+        '''
+        def decorator(f):
+            def setter(ins, name, new_val):
+                super(type(ins), ins).__setattr__(name, new_val)
+                old_val = getattr(ins, name, None)
+                if not(filter_fun is None or filter_fun(old_val, new_val)):
+                    return
+                if not cls.__filter(old_val, new_val):
+                    return
+                db.session.add(OperationLog(
+                    operator_id=current_user.id,
+                    method=f.__name__,
+                    remark='name:{old_val}'.format(old_val)))
+
+            @wraps(f)
+            def wrapper(*args, **kwargs):
+                old_setters = []
+                for t in filter(lambda t: isinstance(t, type), types):
+                    old_setters.append(getattr(t, '__setattr__'))
+                    t.__setattr__ = setter
+                result = f(*args, **kwargs)
+                for i, t in enumerate(
+                        filter(lambda t: isinstance(t, type), types)):
+                        setattr(t, '__setattr__', old_setters[i])
+                db.session.commit()
+                return result
+            return wrapper
+        return decorator
+
+    @classmethod
+    def log(cls, **kwargs):
+        template = cls.__log_stack.pop()
+        remark = template and template.render(**kwargs)
+        cls.__log_stack.push(remark)
 
 
 def person_addr_filter(f):
@@ -262,7 +373,7 @@ def index():
 
 
 @app.route('/login', methods=['GET', 'POST'])
-@OperationLog.log_template()
+@DbLogger.log_template()
 def login():
     form = LoginForm(request.form)
     if request.method == 'POST' and form.validate():
@@ -280,23 +391,23 @@ def login():
         identity_changed.send(
             current_app._get_current_object(),
             identity=Identity(user.id))
-        OperationLog.log(db.session, current_user)
+        DbLogger.log()
         return redirect(request.args.get('next') or url_for('index'))
     return render_template('login.html', form=form)
 
 
 @app.route('/logout', methods=['GET'])
 @login_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def logout():
-    OperationLog.log(db.session, current_user)
+    DbLogger.log()
     logout_user()
     return redirect(url_for('login'))
 
 
 @app.route('/user/changepassword', methods=['GET', 'POST'])
 @login_required
-@OperationLog.log_template()
+@DbLogger.logs(None, User)
 def user_changepassword():
     form = ChangePasswordForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -305,7 +416,6 @@ def user_changepassword():
             logout_user()
             return redirect('/login')
         form.populate_obj(user)
-        OperationLog.log(db.session, current_user)
         db.session.commit()
         identity_changed.send(
             current_app._get_current_object(),
@@ -316,7 +426,7 @@ def user_changepassword():
 
 @app.route('/admin/user/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }}')
+@DbLogger.log_template('{{ user.id }}')
 def admin_add_user():
     form = UserForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -324,7 +434,7 @@ def admin_add_user():
         form.populate_obj(user)
         db.session.add(user)
         db.session.commit()
-        OperationLog.log(db.session, current_user, user=user)
+        DbLogger.log(user=user)
         db.session.commit()
         return 'success'
     return render_template('/admin_add_user.html', form=form)
@@ -332,7 +442,7 @@ def admin_add_user():
 
 @app.route('/admin/user/<int:pk>/remove', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.name }}')
+@DbLogger.log_template('{{ user.name }}')
 def admin_remove_user(pk):
     try:
         user = User.query.filter(User.id == pk).one()
@@ -341,7 +451,7 @@ def admin_remove_user(pk):
         abort(404)
     form = Form(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        OperationLog.log(db.session, current_user, user=user)
+        DbLogger.log(user=user)
         db.session.delete(user)
         db.session.commit()
         return 'success'
@@ -352,7 +462,7 @@ def admin_remove_user(pk):
 
 @app.route('/admin/user/<int:pk>/inactivate', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }}')
+@DbLogger.log_template('{{ user.id }}')
 def admin_user_inactivate(pk):
     try:
         user = User.query.filter(User.id == pk).one()
@@ -361,7 +471,7 @@ def admin_user_inactivate(pk):
         abort(404)
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-            OperationLog.log(db.session, current_user, user=user)
+            DbLogger.log(user=user)
             user.active = False
             db.session.commit()
             return 'success'
@@ -372,7 +482,7 @@ def admin_user_inactivate(pk):
 
 @app.route('/admin/user/<int:pk>/activate', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }}')
+@DbLogger.log_template('{{ user.id }}')
 def admin_user_activate(pk):
     try:
         user = User.query.filter(User.id == pk).one()
@@ -382,7 +492,7 @@ def admin_user_activate(pk):
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
             user.active = True
-            OperationLog.log(db.session, current_user, user=user)
+            DbLogger.log(user=user)
             db.session.commit()
             return 'success'
     return render_template(
@@ -393,7 +503,7 @@ def admin_user_activate(pk):
 @app.route(
     '/admin/user/<int:pk>/changepassword', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }}')
+@DbLogger.log_template('{{ user.id }}')
 def admin_user_changepassword(pk):
     try:
         user = User.query.filter(User.id == pk).one()
@@ -406,7 +516,7 @@ def admin_user_changepassword(pk):
     form = ChangePasswordForm(init_data)
     if request.method == 'POST' and form.validate_on_submit():
         form.populate_obj(user)
-        OperationLog.log(db.session, current_user, user=user)
+        DbLogger.log(user=user)
         db.session.commit()
         return 'success'
     return render_template('admin_user_changepassword.html', form=form)
@@ -415,7 +525,7 @@ def admin_user_changepassword(pk):
 @app.route(
     '/admin/user/<int:pk>/addrole', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }},added_role:{{ form.role.data }}')
+@DbLogger.log_template('{{ user.id }},added_role:{{ form.role.data }}')
 def admin_user_add_role(pk):
     try:
         user = User.query.filter(User.id == pk).one()
@@ -425,7 +535,7 @@ def admin_user_add_role(pk):
     form = AdminAddRoleForm(user, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         form.populate_obj(user)
-        OperationLog.log(db.session, current_user, user=user, form=form)
+        DbLogger.log(user=user, form=form)
         db.session.commit()
         identity_changed.send(
             current_app._get_current_object(),
@@ -437,7 +547,7 @@ def admin_user_add_role(pk):
 @app.route(
     '/admin/user/<int:pk>/removerole', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user.id }},removed_roles:{{ form.role.data }}')
+@DbLogger.log_template('{{ user.id }},removed_roles:{{ form.role.data }}')
 def admin_user_remove_role(pk):
     try:
         user = User.query.filter(User.id == pk).one()
@@ -447,7 +557,7 @@ def admin_user_remove_role(pk):
     form = AdminRemoveRoleForm(user, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
         form.populate_obj(user)
-        OperationLog.log(db.session, current_user, user=user, form=form)
+        DbLogger.log(user=user, form=form)
         db.session.commit()
         return 'success'
     return render_template('admin_user_remove_role.html', form=form, user=user)
@@ -455,13 +565,13 @@ def admin_user_remove_role(pk):
 
 @app.route('/admin/user/<int:pk>/bindaddr', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ address_id }}')
+@DbLogger.log_template('{{ address_id }}')
 def admin_user_bindaddr(pk):
     user = db.my_get_obj_or_404(User, User.id, pk)
     form = AdminUserBindaddrForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         user.address_id = form.address.data
-        OperationLog.log(db.session, current_user, address_id=user.address_id)
+        DbLogger.log(address_id=user.address_id)
         db.session.commit()
         return 'success'
     return render_template('admin_user_bindaddr.html', form=form)
@@ -492,7 +602,7 @@ def admin_user_search(page, per_page):
 
 @app.route('/admin/role/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ role.id }}')
+@DbLogger.log_template('{{ role.id }}')
 def admin_role_add():
     form = RoleForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -500,7 +610,7 @@ def admin_role_add():
         form.populate_obj(role)
         db.session.add(role)
         db.session.commit()
-        OperationLog.log(db.session, current_user, role=role)
+        DbLogger.log(role=role)
         db.session.commit()
         return 'success'
     return render_template('admin_role_add.html', form=form)
@@ -508,7 +618,7 @@ def admin_role_add():
 
 @app.route('/admin/role/<int:pk>/romve', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ role.name }}')
+@DbLogger.log_template('{{ role.name }}')
 def admin_role_remove(pk):
     try:
         role = Role.query.filter(Role.id == pk).one()
@@ -520,6 +630,7 @@ def admin_role_remove(pk):
         for user in role.users:
             user.roles = filter(lambda r: r.id != role.id, user.roles)
             db.session.commit()
+        DbLogger.log(role=role)
         db.session.delete(role)
         db.session.commit()
         return 'success'
@@ -570,7 +681,7 @@ def admin_log_search(page, per_page):
 @app.route(
     '/admin/log/operator_id/<int:operator_id>/clean', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def admin_log_clean(operator_id):
     try:
         user = User.query.filter(User.id == operator_id).one()
@@ -589,13 +700,15 @@ def admin_log_clean(operator_id):
             query = query.filter(OperationLog.time <= end_time)
         query.delete()
         db.session.commit()
+        DbLogger.log()
+        db.session.commit()
         return 'success'
     return render_template('admin_log_clean.html', form=form, user=user)
 
 
 @app.route('/address/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ address.id }}')
+@DbLogger.log_template('{{ address.id }}')
 def address_add():
     form = AddressForm(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -603,7 +716,7 @@ def address_add():
         form.populate_obj(address)
         db.session.add(address)
         db.session.commit()
-        OperationLog.log(db.session, current_user, address=address)
+        DbLogger.log(address=address)
         db.session.commit()
         return 'success'
     return render_template('address_edit.html', form=form)
@@ -611,7 +724,7 @@ def address_add():
 
 @app.route('/address/<int:pk>/delete', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ address.name }}')
+@DbLogger.log_template('{{ address.name }}')
 def address_delete(pk):
     try:
         address = Address.query.filter(Address.id == pk).one()
@@ -622,9 +735,9 @@ def address_delete(pk):
     if request.method == 'POST' and form.validate_on_submit():
         for descendant in address.descendants:
             db.session.delete(descendant)
-            OperationLog.log(db.session, current_user, address=descendant)
+            DbLogger.log(address=descendant)
         db.session.delete(address)
-        OperationLog.log(db.session, current_user, address=address)
+        DbLogger.log(address=address)
         db.session.commit()
         return 'success'
     return render_template(
@@ -635,7 +748,7 @@ def address_delete(pk):
 
 @app.route('/address/<int:pk>/edit', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def address_edit(pk):
     try:
         address = Address.query.filter(Address.id == pk).one()
@@ -672,7 +785,7 @@ def address_search(page, per_page):
 
 @app.route('/person/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person.id }},')
+@DbLogger.log_template('{{ person.id }},')
 def person_add():
     form = PersonForm(current_user, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -685,7 +798,7 @@ def person_add():
             abort(500)
         db.session.add(person)
         db.session.commit()
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('person_edit.html', form=form)
@@ -693,7 +806,7 @@ def person_add():
 
 @app.route('/person/upload', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def person_upload():
     form = Form(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -727,7 +840,7 @@ def person_upload():
                     personal_wage=0,
                     create_by=current_user
                 ).reg())
-        OperationLog.log(db.session, current_user)
+        DbLogger.log()
         db.session.add_all(persons)
         db.session.commit()
         return 'success'
@@ -737,12 +850,12 @@ def person_upload():
 @app.route('/person/<int:pk>/delete', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }},{{ person.idcard }}')
+@DbLogger.log_template('{{ person.id }},{{ person.idcard }}')
 def person_delete(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.delete(person)
         db.session.commit()
         return 'success'
@@ -754,7 +867,7 @@ def person_delete(pk):
 @app.route('/person/<int:pk>/retire_reg', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }},')
+@DbLogger.log_template('{{ person.id }},')
 def person_retire_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = DateForm(formdata=request.form)
@@ -765,7 +878,7 @@ def person_retire_reg(pk):
             flash('Person can not be retire')
             db.session.rollback()
             abort(500)
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('date.html', form=form, title='persn retire reg')
@@ -774,7 +887,7 @@ def person_retire_reg(pk):
 @app.route('/person/<int:pk>/normal_reg', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }},')
+@DbLogger.log_template('{{ person.id }},')
 def person_normal_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -785,7 +898,7 @@ def person_normal_reg(pk):
             flash('Person can not normal')
             db.session.rollback()
             abort(500)
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('confirm.html', form=form, title='normal reg')
@@ -794,7 +907,7 @@ def person_normal_reg(pk):
 @app.route('/person/batch_normal', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }},')
+@DbLogger.log_template('{{ person.id }},')
 def person_batch_normal():
     form = PeroidForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -804,7 +917,7 @@ def person_batch_normal():
                     Person.birthday <= form.end_date.data).all()
         for person in persons:
             person.normal()
-            OperationLog.log(db.session, current_user, person=person)
+            DbLogger.log(person=person)
         db.session.flush()
         db.session.commit()
         return 'succes'
@@ -814,7 +927,7 @@ def person_batch_normal():
 @app.route('/person/<int:pk>/dead_reg', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }},')
+@DbLogger.log_template('{{ person.id }},')
 def person_dead_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = DateForm(request.form)
@@ -825,7 +938,7 @@ def person_dead_reg(pk):
             flash('Person can not dead')
             db.session.rollback()
             abort(500)
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('date.html', form=form, title='dead reg')
@@ -834,7 +947,7 @@ def person_dead_reg(pk):
 @app.route('/person/<int:pk>/abort_reg', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }},')
+@DbLogger.log_template('{{ person.id }},')
 def person_abort_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -845,7 +958,7 @@ def person_abort_reg(pk):
             flash('Person can not abort')
             db.session.rollback()
             abort(500)
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('confirm.html', form=form, title='persn abort')
@@ -854,7 +967,7 @@ def person_abort_reg(pk):
 @app.route('/person/<int:pk>/suspend', methods=['GET', 'POST'])
 @person_admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }}')
+@DbLogger.log_template('{{ person.id }}')
 def person_suspend_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -865,7 +978,7 @@ def person_suspend_reg(pk):
             flash('Person can not suspend')
             db.session.rollback()
             abort(500)
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('confirm.html', form=form, title='person suspend')
@@ -874,7 +987,7 @@ def person_suspend_reg(pk):
 @app.route('/person/<int:pk>/resume', methods=['GET', 'POST'])
 @person_admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }},')
+@DbLogger.log_template('{{ person.id }},')
 def person_resume_reg(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = Form(request.form)
@@ -885,7 +998,7 @@ def person_resume_reg(pk):
             flash('Person can not resume')
             db.session.rollback()
             abort(500)
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('confirm.html', form=form, title='person resume')
@@ -894,13 +1007,13 @@ def person_resume_reg(pk):
 @app.route('/person/<int:pk>/update', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{person.id }},{{ person.idcard }},' +
-                           '{{ person.name }},{{ person.idcard }},')
+@DbLogger.log_template('{{person.id }},{{ person.idcard }},' +
+                       '{{ person.name }},{{ person.idcard }},')
 def person_update(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = PersonForm(current_user, obj=person, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         form.populate_obj(person)
         db.session.commit()
         return 'success'
@@ -941,7 +1054,7 @@ def person_search(page, per_page):
 @app.route('/person/<int:pk>/standardbind', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }},{{ form.standard_id.data }}')
+@DbLogger.log_template('{{ person.id }},{{ form.standard_id.data }}')
 def standard_bind(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = StandardBindForm(person, formdata=request.form)
@@ -951,7 +1064,7 @@ def standard_bind(pk):
             db.session.rollback()
             flash("person's standard wages were conflict")
             abort(500)
-        OperationLog.log(db.session, current_user, person=person, form=form)
+        DbLogger.log(person=person, form=form)
         db.session.commit()
         return 'success'
     return render_template('standard_bind.html', form=form)
@@ -994,7 +1107,7 @@ def person_log_search(pk, page, per_page):
 
 @app.route('/standard/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ standard.id }}')
+@DbLogger.log_template('{{ standard.id }}')
 def standard_add():
     form = StandardForm(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1002,7 +1115,7 @@ def standard_add():
         form.populate_obj(standard)
         db.session.add(standard)
         db.session.commit()
-        OperationLog.log(db.session, current_user, standard=standard)
+        DbLogger.log(standard=standard)
         db.session.commit()
         return 'success'
     return render_template('standard_edit.html', form=form)
@@ -1010,7 +1123,7 @@ def standard_add():
 
 @app.route('/bankcard/add', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ bankcard.id }}')
+@DbLogger.log_template('{{ bankcard.id }}')
 def bankcard_add():
     form = BankcardForm(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1018,7 +1131,7 @@ def bankcard_add():
         form.populate_obj(bankcard)
         bankcard.create_by = current_user
         db.session.commit()
-        OperationLog.log(db.session, current_user, bankcard=bankcard)
+        DbLogger.log(bankcard=bankcard)
         db.session.commit()
         return 'success'
     return render_template('bankcard_edit.html', form=form)
@@ -1027,7 +1140,7 @@ def bankcard_add():
 @app.route('/bankcard/<int:pk>/bind/', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ bankcard.id }},{{ bankcard.owner.idcard }}')
+@DbLogger.log_template('{{ bankcard.id }},{{ bankcard.owner.idcard }}')
 def bankcard_bind(pk):
     bankcard = db.my_get_obj_or_404(Bankcard, Bankcard.id, pk)
     form = BankcardBindForm(request.form)
@@ -1044,7 +1157,7 @@ def bankcard_bind(pk):
                 form.idcard.data))
             abort(500)
         bankcard.owner_id = person.id
-        OperationLog.log(db.session, current_user, bankcard=bankcard)
+        DbLogger.log(bankcard=bankcard)
         db.session.commit()
         return 'success'
     return render_template('bankcard_bind.html', form=form)
@@ -1053,13 +1166,13 @@ def bankcard_bind(pk):
 @app.route('/bankcard/<int:pk>/update', methods=['GET', 'POST'])
 @admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ bankcard.id }}')
+@DbLogger.log_template('{{ bankcard.id }}')
 def bankcard_update(pk):
     bankcard = db.my_get_obj_or_404(Bankcard, Bankcard.id, pk)
     form = BankcardForm(formdata=request.form, obj=bankcard)
     if request.method == 'POST' and form.validate_on_submit():
         form.populate_obj(bankcard)
-        OperationLog.log(db.session, current_user, bankcard=bankcard)
+        DbLogger.log(bankcard=bankcard)
         db.session.commit()
         return 'success'
     return render_template('bankcard_edit.html', form=form)
@@ -1092,7 +1205,7 @@ def bankcard_search(page, per_page):
 
 @app.route('/note/add', methods=['GET', 'POST'])
 @login_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def note_add():
     form = NoteForm(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1108,7 +1221,7 @@ def note_add():
 @app.route('/note/forperson/<int:pk>', methods=['GET', 'POST'])
 @person_admin_required
 @person_addr_filter
-@OperationLog.log_template('{{ person.id }}')
+@DbLogger.log_template('{{ person.id }}')
 def note_add_to_person(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = NoteForm(formdata=request.form)
@@ -1117,7 +1230,7 @@ def note_add_to_person(pk):
         form.populate_obj(note)
         note.person = person
         db.session.add(note)
-        OperationLog.log(db.session, current_user, person=person)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('note_edit.html', form=form,
@@ -1136,7 +1249,7 @@ def _get_note_or_404(pk):
 
 @app.route('/note/finish/<int:pk>', methods=['GET', 'POST'])
 @login_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def note_finish(pk):
     note = _get_note_or_404(pk)
     form = Form(request.form)
@@ -1149,7 +1262,7 @@ def note_finish(pk):
 
 @app.route('/note/disable/<int:pk>', methods=['GET', 'POST'])
 @login_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def note_disable(pk):
     note = _get_note_or_404(pk)
     form = Form(request.form)
@@ -1162,7 +1275,7 @@ def note_disable(pk):
 
 @app.route('/note/clean', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def note_clean():
     form = DateForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1189,7 +1302,7 @@ def note_search(page, per_page):
 
 @app.route('/note/touser/<int:user_id>', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ user_id }}')
+@DbLogger.log_template('{{ user_id }}')
 def note_to_user(user_id):
     user = db.my_get_obj_or_404(User, User.id, user_id)
     form = NoteForm(formdata=request.form)
@@ -1205,7 +1318,7 @@ def note_to_user(user_id):
 
 @app.route('/payitem/add', methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template('{{ item.id }}')
+@DbLogger.log_template('{{ item.id }}')
 def payitem_add():
     form = PayItemForm(formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1213,7 +1326,7 @@ def payitem_add():
         form.populate_obj(item)
         db.session.add(item)
         db.session.commit()
-        OperationLog.log(db.session, current_user, item=item)
+        DbLogger.log(item=item)
         return 'success'
     return render_template('payitem_edit.html', form=form,
                            title='payitem add')
@@ -1241,7 +1354,7 @@ def pay_item_search(page, per_page):
 
 @app.route('/paybook/upload', methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template('{{ peroid }}')
+@DbLogger.log_template('{{ peroid }}')
 def paybook_upload():
     peroid = request.args.get('peroid')
     if peroid:
@@ -1293,7 +1406,7 @@ def paybook_upload():
                 person.id, item1.id, item2.id, bankcard.id, bankcard.id,
                 float(record.money),
                 peroid, current_user.id))
-        OperationLog.log(db.session, current_user, peroid=peroid)
+        DbLogger.log(peroid=peroid)
         db.session.commit()
         db.session.flush()
         return 'success'
@@ -1302,7 +1415,7 @@ def paybook_upload():
 
 @app.route('/paybook/person/<int:person_id>/amend', methods=['GET', 'POST'])
 @admin_required
-@OperationLog.log_template('{{ person_id }},{{ peroid }}')
+@DbLogger.log_template('{{ person_id }},{{ peroid }}')
 def paybook_amend(person_id):
     peroid = request.args.get('peroid')
     if not peroid:
@@ -1331,8 +1444,7 @@ def paybook_amend(person_id):
         except NoResultFound:
             abort(404)
         db.session.add_all(lst)
-        OperationLog.log(db.session, current_user, person_id=person_id,
-                         peroid=peroid)
+        DbLogger.log(person_id=person_id, peroid=peroid)
         db.session.commit()
         return 'success'
     return render_template('paybook_amend.html', form=form)
@@ -1340,7 +1452,7 @@ def paybook_amend(person_id):
 
 @app.route('/paybook/batchsuccess', methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template('{{ fails }}')
+@DbLogger.log_template('{{ fails }}')
 def paybook_batch_success():
     form = BatchSuccessFrom(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1372,8 +1484,7 @@ def paybook_batch_success():
                 book.bankcard_id, book.bankcard_id,
                 book.money, book.peroid, current_user.id))
         db.session.add_all(lst)
-        OperationLog.log(db.session, current_user,
-                         fails=','.join(form.fails.data.splitlines()))
+        DbLogger.log(fails=','.join(form.fails.data.splitlines()))
         db.session.commit()
         return 'success'
     return render_template('paybook_batch_success.html', form=form)
@@ -1383,7 +1494,7 @@ def paybook_batch_success():
            '/peroid/<date:peroid>/failcrrect',
            methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template('{{ person_id }},{{ peroid }}')
+@DbLogger.log_template('{{ person_id }},{{ peroid }}')
 def paybook_fail_correct(person_id, peroid):
     form = FailCorrectForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1426,8 +1537,7 @@ def paybook_fail_correct(person_id, peroid):
                         datetime.now(),
                         current_user.id)) or lst,
                 books, []))
-        OperationLog.log(db.session, current_user, person_id=person_id,
-                         peroid=peroid)
+        DbLogger.log(person_id=person_id, peroid=peroid)
         db.session.commit()
         return 'success'
     return render_template('paybook_fail_correct.html', form=form)
@@ -1437,7 +1547,7 @@ def paybook_fail_correct(person_id, peroid):
            '/person/<int:person_id>' +
            '/peroid/<date:peroid>/successcorrect', methods=['GET', 'POST'])
 @pay_admin_required
-@OperationLog.log_template('{{ person_id }},{{ bankcard_id }},{{ peroid }}')
+@DbLogger.log_template('{{ person_id }},{{ bankcard_id }},{{ peroid }}')
 def paybook_success_correct(bankcard_id, person_id, peroid):
     form = SuccessCorrectForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
@@ -1467,8 +1577,8 @@ def paybook_success_correct(bankcard_id, person_id, peroid):
                     min(form.money.data, books[0].money),
                     peroid,
                     current_user.id))
-        OperationLog.log(db.session, current_user, person_id=person_id,
-                         bankcard_id=bankcard_id, peroid=peroid)
+        DbLogger.log(person_id=person_id,
+                     bankcard_id=bankcard_id, peroid=peroid)
         db.session.commit()
         return 'success'
     return render_template('paybook_success_correct.html', form=form)
@@ -1557,7 +1667,7 @@ def paybook_sys_search(page, per_page):
 
 @app.route('/paybook/bankgrant', methods=['GET'])
 @pay_admin_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def paybook_bankgrant():
     money = func.sum(PayBook.money).label('money')
     query = db.session.query(
@@ -1606,7 +1716,7 @@ def paybook_bankgrant():
             zipf.writestr('{}.csv'.format(i + 1), '\n'.join(lines))
         f.seek(0)
         data = f.read()
-    OperationLog.log(db.session, current_user)
+    DbLogger.log()
     db.session.commit()
     return Response(
         (x for x in data),
@@ -1618,7 +1728,7 @@ def paybook_bankgrant():
 
 @app.route('/paybook/public', methods=['GET'])
 @admin_required
-@OperationLog.log_template()
+@DbLogger.log_template()
 def paybook_public_report():
     money = func.sum(PayBook.money).label('money')
     query = db.session.query(
@@ -1653,7 +1763,7 @@ def paybook_public_report():
                     book.address_detail,
                     book.money)))
     lines = map(book2csv, books)
-    OperationLog.log(db.session, current_user)
+    DbLogger.log()
     db.session.commit()
     return Response(
         (x for x in '\n'.join(lines)),

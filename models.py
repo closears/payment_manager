@@ -1,12 +1,11 @@
 # coding=utf-8
 
 import datetime
-from datetime import timedelta
 import calendar
+from datetime import timedelta
 from hashlib import md5
 from dateutil.relativedelta import relativedelta
 from flask import Flask, abort
-from jinja2 import Template
 from sqlalchemy import or_, and_, false, exists, select, func
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from flask_sqlalchemy import SQLAlchemy, Pagination
@@ -745,7 +744,7 @@ class PayBookItem(db.Model):
     @hybrid_method
     def ancestor_of(self, item):
         return item and self in item.ancestors
-    
+
     @ancestor_of.expression
     def ancestor_of(cls, item):
         if not item or not item.ancestors:
@@ -939,37 +938,6 @@ class OperationLog(db.Model):
             method=self.method,
             remark=self.remark,
             time=self.time).encode('utf-8')
-
-    __log_templates = {}
-
-    @classmethod
-    def log_template(cls, template=None, name=None):
-        def decorator(f):
-            cls.__log_templates[name or f.__name__]\
-                = Template(template) if template else None
-            return f
-        return decorator
-
-    @classmethod
-    def log(cls, session, operator, template_key=None, **kwargs):
-        if session is None or operator is None:
-            raise ValueError('db session and operator is neeed!')
-        import sys
-        method = sys._getframe(1).f_code.co_name
-        if method == "<module>":
-            return EnvironmentError(unicode('can not run in module level'))
-        if not template_key:
-            template_name = method
-        elif callable(template_key):
-            template_name = template_key.__name__
-        else:
-            template_name = str(template_key)
-        template = cls.__log_templates.get(template_name, None)
-        return session.add(cls(
-            operator_id=operator.id,
-            method=method,
-            remark=template.render(**kwargs) if template else None
-        ))
 
 
 class Note(db.Model):
