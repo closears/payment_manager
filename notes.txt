@@ -23,5 +23,3 @@
 写简单的前端
 远期计划
 慢慢写文档
-重写OperationLog功能，自动记录model的值变化
-写一个paybook 的assoc class,抽象结转，归集，清零等操作

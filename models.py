@@ -768,7 +768,7 @@ class PayBook(db.Model):
     bankcard = db.relationship('Bankcard', backref='paybooks')
     item_id = db.Column(db.Integer, db.ForeignKey('paybookitems.id'),
                         nullable=False)
-    money = db.Column(db.Float(precision=2), nullable=False)
+    money = db.Column(db.Decimal(precision=9, scale=2), nullable=False)
     _peroid = db.Column(db.Date, default=datetime.datetime.now,
                         nullable=False)
     _item = db.relationship('PayBookItem')
@@ -868,11 +868,11 @@ class PayBook(db.Model):
             PayBookItem.name == item_name))
 
     @hybrid_method
-    def item_in(self, item_names):
+    def item_in(self, *item_names):
         return self.item.name in item_names
 
     @item_in.expression
-    def item_in(self, item_names):
+    def item_in(self, *item_names):
         return exists().where(and_(
             PayBookItem.id == PayBook.item_id,
             PayBookItem.name.in_(item_names))) if item_names else false()
