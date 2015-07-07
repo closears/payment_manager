@@ -192,7 +192,7 @@ class DbLogger(object):
                 db.session.add(OperationLog(
                     operator_id=current_user.id,
                     method=f.__name__,
-                    remark=remark))
+                    remark=remark if isinstance(remark, str) else None))
                 db.session.commit()
                 return result
             return wrapper
@@ -483,7 +483,6 @@ def login():
         identity_changed.send(
             current_app._get_current_object(),
             identity=Identity(user.id))
-        DbLogger.log()
         return redirect(request.args.get('next') or url_for('index'))
     return render_template('login.html', form=form)
 
@@ -492,7 +491,6 @@ def login():
 @login_required
 @DbLogger.log_template()
 def logout():
-    DbLogger.log()
     logout_user()
     return redirect(url_for('login'))
 
