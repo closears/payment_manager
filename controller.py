@@ -49,12 +49,14 @@ db.my_get_obj_or_404 = __find_obj_or_404
 
 
 class RegexConverter(BaseConverter):
+    '''url arg processor for Regex'''
     def __init__(self, map, *args):
         self.map = map
         self.regex = args[0]
 
 
 class DateConverter(BaseConverter):
+    '''url arg processor for Date'''
     def __init__(self, map, *args):
         self.map = map
         self.regex = r'\d{4}-\d{2}-\d{2}'
@@ -70,6 +72,7 @@ class DateConverter(BaseConverter):
 
 
 class DateTimeConverter(BaseConverter):
+    '''url arg processor for datetime'''
     def __init__(self, map, *args):
         self.map = map
         self.regex = r'\d{4}-\d{2}-\d{2}'
@@ -85,7 +88,7 @@ class DateTimeConverter(BaseConverter):
 
 
 class NoneConverter(BaseConverter):
-
+    '''url arg processor for None type'''
     @classmethod
     def to_python(cls, value):
         return None if value == 'None' else value
@@ -96,6 +99,7 @@ class NoneConverter(BaseConverter):
 
 
 class BooleanConverter(BaseConverter):
+    '''url arg processor for Boolean'''
     def __init__(self, map, *args):
         self.map = map
         self.regex == 'yes|no'
@@ -127,6 +131,8 @@ pay_admin_required = Permission(RoleNeed('pay_admin')).require(403)
 
 
 class DbLogger(object):
+    '''log operation to db'''
+
     __val_filters = []  # class global val filters
     __log_stack = LocalStack()
 
