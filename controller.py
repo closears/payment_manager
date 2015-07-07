@@ -341,8 +341,8 @@ class PayBookManager(object):
     def lst_groupby_bankcard(self, negative=True, groupby_peroid=False):
         query = db.session.query(
             PayBook.bankcard_id,
-            PayBook.person_id,
             PayBook.item_id,
+            PayBook.peroid,
             func.sum(PayBook.money).label('money'),
             PayBook.peroid).filter(PayBook.person_id == self.person.id)
         if self.items:
@@ -358,7 +358,7 @@ class PayBookManager(object):
         return map(
             lambda row: PayBook(
                 bankcard_id=row.bankcard_id,
-                person_id=row.person_id,
+                person_id=self.person.id,
                 item_id=row.item_id,
                 create_user_id=current_user.id,
                 money=row.money,
@@ -1541,6 +1541,7 @@ def paybook_upload():
 @admin_required
 @DbLogger.log_template('{{ person.id }}')
 def paybook_amend(person_id):
+    '''Amend the person's sys_should_pay balance'''
     person = db.my_get_obj_or_404(Person, Person.id, person_id)
     manager = PayBookManager(person, 'sys_should_pay')
     form = AmendForm(obj=manager, formdata=request.form)
