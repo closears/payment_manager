@@ -305,8 +305,9 @@ class PayBookManager(object):
     def __create_dict(self, item, bankcard, money, peroid, remark=None):
         result = {}
         result.update(person_id=self.person.id)
-        result.update(bankcard_id=bankcard.id)
-        result.update(item_id=item.id)
+        result.update(
+            bankcard_id=bankcard if isinstance(bankcard, int) else bankcard.id)
+        result.update(item_id=item if isinstance(item, int) else item.id)
         result.update(create_user_id=current_user.id)
         result.update(money=money)
         result.update(peroid=peroid)
@@ -1538,28 +1539,12 @@ def paybook_upload():
 
 @app.route('/paybook/person/<int:person_id>/amend', methods=['GET', 'POST'])
 @admin_required
-@DbLogger.log_template('{{ person_id }},{{ peroid }}')
+@DbLogger.log_template('{{ person.id }}')
 def paybook_amend(person_id):
-    peroid = request.args.get('peroid')
-    if not peroid:
-        flash("the peroid is required")
-        abort(500)
-    peroid = datetime.strptime(peroid, '%Y-%m-%d').date()
-    money = func.sum(PayBook.money).label('money')
-    paybooks = db.session.query(
-        PayBook.person_id.label('person'),
-        PayBook.bankcard_id.label('bankcard'),
-        PayBook.item_id.label('item'),
-        PayBook.peroid,
-        money).filter(
-            PayBook.item_is('sys_should_pay'),
-            PayBook.person_id == person_id,
-            PayBook.in_peroid(peroid)).group_by(
-                PayBook.bankcard_id).having(money < 0).all()
-    form = AmendForm(obj=paybooks, user=current_user, formdata=request.form)
-    payed = db.session.query(money).filter(
-        PayBook.in_peroid(peroid),
-        PayBook.item_is('bank_should_pay')).scalar() == 0
+    person = db.my_get_obj_or_404(Person, Person.id, person_id)
+    manager = PayBookManager(person, 'sys_should_pay')
+    form = AmendForm(obj=manager, formdata=request.form)
+    payed = PayBookManager(person, 'bank_should_pay').sum_money()
     if not payed and request.method == 'POST' and form.validate_on_submit():
         lst = []
         try:
@@ -1567,7 +1552,7 @@ def paybook_amend(person_id):
         except NoResultFound:
             abort(404)
         db.session.add_all(lst)
-        DbLogger.log(person_id=person_id, peroid=peroid)
+        DbLogger.log(person=person)
         db.session.commit()
         return 'success'
     return render_template('paybook_amend.html', form=form)

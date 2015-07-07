@@ -243,11 +243,11 @@ class AmendForm(ModelForm):
 
     def __init__(self, **kwargs):
         super(AmendForm, self).__init__(**kwargs)
-        self.paybooks = kwargs['obj']
-        self.user = kwargs['user']
+        self.bookmanager = kwargs['obj']
+        self.books = self.bookmanager.lst_groupby_bankcard()
 
     def validate_on_submit(self):
-        for book in self.paybooks:
+        for book in self.books:
             item = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
                 book.item, PayBookItem.query)
             if item.name not in ['sys_should_pay', 'bank_payed']:
@@ -267,19 +267,16 @@ class AmendForm(ModelForm):
             PayBookItem.name == 'bank_should_pay').one()
         bankcard = Bankcard.query.filter(
             Bankcard.no == self.bankcard.data).one()
-        if self.paybooks:
+        if self.books:
             # valish all money of all bankcards witch belong person
             lst.extend(reduce(
-                lambda x, y: x.extend(PayBook.create_tuple(
-                    y.person, sys_should, bank_should, y.bankcard, y.bankcard,
-                    y.money, y.peroid, self.user)) or x,
-                self.paybooks, []))
+                lambda x, y: x.extend(self.bookmanager.create_tuple(
+                    y.bankcard_id, sys_should, bank_should, y.money)) or x,
+                self.books, []))
             # amend money to new bankcard
             lst.extend(
-                PayBook.create_tuple(
-                    self.paybooks[0].person, sys_amend, bank_should, bankcard,
-                    bankcard, self.money.data, datetime.now().date(),
-                    self.user))
+                self.bookmanager.create_tuple(
+                    bankcard, sys_amend, bank_should, self.money.data))
 
 
 class BatchSuccessFrom(Form):
