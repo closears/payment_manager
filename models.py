@@ -768,7 +768,7 @@ class PayBook(db.Model):
     bankcard = db.relationship('Bankcard', backref='paybooks')
     item_id = db.Column(db.Integer, db.ForeignKey('paybookitems.id'),
                         nullable=False)
-    money = db.Column(db.Decimal(precision=9, scale=2), nullable=False)
+    money = db.Column(db.Numeric(precision=9, scale=2), nullable=False)
     _peroid = db.Column(db.Date, default=datetime.datetime.now,
                         nullable=False)
     _item = db.relationship('PayBookItem')

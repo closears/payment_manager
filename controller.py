@@ -243,8 +243,8 @@ class DbLogger(object):
 
 class PayBookManager(object):
     def __init__(self, person, *items):
-        self._person = person
-        self._items = items or []
+        self.person = person
+        self.items = items
         self.refresh_query()
 
     def refresh_query(self):
@@ -261,6 +261,10 @@ class PayBookManager(object):
         return next(self)
 
     @property
+    def count(self):
+        return self.query.count()
+
+    @property
     def person(self):
         return self._person
 
@@ -274,57 +278,91 @@ class PayBookManager(object):
         return self._items
 
     @items.setter
-    def items(self, val):
-        self._items = val
+    def items(self, items):
+        self._items = map(
+            lambda item: (PayBookItem.query.filter(
+                PayBookItem.name == item).first() if isinstance(item, str) else
+                item),
+            items)
         self.refresh_query()
 
     @property
     def current_peroid(self):
-        return datetime.now().date()
+        now = datetime.now()
+        return date(now.year, now.month, 1)
 
-    def sum(self, bankcard=None, peroid=None):
+    def sum_money(self, bankcard=None, peroid=None):
         query = db.session.query(func.sum(
-            PayBook.money)).filter(
-                PayBook.person_id == self.person.id,
-                PayBook.item_in(*self.items))
+            PayBook.money)).filter(PayBook.person_id == self.person.id)
+        if self.items:
+            query = query.filter(PayBook.item_in(*self.items))
         if bankcard:
             query = query.filter(PayBook.bankcard_id == bankcard.id)
         if peroid:
             query = query.filter(PayBook.in_peroid(peroid))
         return query.scalar()
 
-    def __create_dict(self, item, bankcard, money, peroid):
+    def __create_dict(self, item, bankcard, money, peroid, remark=None):
         result = {}
         result.update(person_id=self.person.id)
         result.update(bankcard_id=bankcard.id)
         result.update(item_id=item.id)
         result.update(create_user_id=current_user.id)
         result.update(money=money)
-        result.update(peroid)
+        result.update(peroid=peroid)
+        result.update(remark=remark)
         return result
 
-    def settle_to(self, item, bankcard):
+    def settle_to(self, item, bankcard, remark=None):
         if self.query.count() == 0:
             return
         books = self.query.all()
         for book in books:
             db.session.add(PayBook(**self.__create_dict(
-                book.item, book.bankcard, -book.money, self.current_peroid)))
+                book.item, book.bankcard, -book.money, self.current_peroid,
+                remark)))
         money = reduce(lambda a, b: a + b.money, books, 0.0)
         if abs(money) >= 0.01:
             db.session.add(PayBook(**self.__create_dict(
-                item, bankcard, money, self.current_peroid)))
+                item, bankcard, money, self.current_peroid, remark)))
         db.session.commit()
 
-    def create_tuple(self, bankcard, item1, item2, money):
+    def create_tuple(self, bankcard, item1, item2, money, remark=None):
         lst = map(
             lambda args: PayBook(**self.__create_dict(*args)),
             (
-                (item1, bankcard, -money, self.current_peroid),
-                (item2, bankcard, money, self.current_peroid)))
+                (item1, bankcard, -money, self.current_peroid, remark),
+                (item2, bankcard, money, self.current_peroid, remark)))
         db.session.add_all(lst)
         db.session.commit()
         return lst
+
+    def lst_groupby_bankcard(self, negative=True, groupby_peroid=False):
+        query = db.session.query(
+            PayBook.bankcard_id,
+            PayBook.person_id,
+            PayBook.item_id,
+            func.sum(PayBook.money).label('money'),
+            PayBook.peroid).filter(PayBook.person_id == self.person.id)
+        if self.items:
+            query = query.filter(PayBook.item_in(*self.items))
+        groupby_lst = [PayBook.bankcard_id, PayBook.item_id]
+        if groupby_peroid:
+            groupby_lst.append(PayBook.peroid)
+        query = query.group_by(*groupby_lst)
+        if negative:
+            query = query.having(PayBook.money < 0)
+        else:
+            query = query.having(PayBook.money > 0)
+        return map(
+            lambda row: PayBook(
+                bankcard_id=row.bankcard_id,
+                person_id=row.person_id,
+                item_id=row.item_id,
+                create_user_id=current_user.id,
+                money=row.money,
+                peroid=self.current_peroid),
+            query.all())
 
 
 def person_addr_filter(f):
@@ -1490,13 +1528,10 @@ def paybook_upload():
             if not bankcard.binded:
                 flash("unbind bankcard can't pay")
                 abort(500)
-            db.session.add_all(PayBook.create_tuple(
-                person.id, item1.id, item2.id, bankcard.id, bankcard.id,
-                float(record.money),
-                peroid, current_user.id))
+            PayBookManager(person).create_tuple(
+                bankcard, item1, item2, float(record.money))
+            db.session.flush()
         DbLogger.log(peroid=peroid)
-        db.session.commit()
-        db.session.flush()
         return 'success'
     return render_template('upload.html', form=form)
 
