@@ -166,7 +166,7 @@ class DbLogger(object):
         '''
         if callable(old_val) or callable(new_val):
             return False
-        if not cls.__val_filters:
+        if not cls.__val_filters:  # default behaver if not have filters
             if old_val is None:
                 return False
             if old_val == new_val:
@@ -655,13 +655,13 @@ def admin_user_remove_role(pk):
 
 @app.route('/admin/user/<int:pk>/bindaddr', methods=['GET', 'POST'])
 @admin_required
-@DbLogger.log_template('{{ address_id }}')
+@DbLogger.log_template('{{ user.address_id }}')
 def admin_user_bindaddr(pk):
     user = db.my_get_obj_or_404(User, User.id, pk)
     form = AdminUserBindaddrForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         user.address_id = form.address.data
-        DbLogger.log(address_id=user.address_id)
+        DbLogger.log(user=user)
         db.session.commit()
         return 'success'
     return render_template('admin_user_bindaddr.html', form=form)
@@ -790,7 +790,6 @@ def admin_log_clean(operator_id):
             query = query.filter(OperationLog.time <= end_time)
         query.delete()
         db.session.commit()
-        DbLogger.log()
         db.session.commit()
         return 'success'
     return render_template('admin_log_clean.html', form=form, user=user)
@@ -930,7 +929,6 @@ def person_upload():
                     personal_wage=0,
                     create_by=current_user
                 ).reg())
-        DbLogger.log()
         db.session.add_all(persons)
         db.session.commit()
         return 'success'
@@ -1103,9 +1101,9 @@ def person_update(pk):
     person = db.my_get_obj_or_404(Person, Person.id, pk)
     form = PersonForm(current_user, obj=person, formdata=request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        DbLogger.log(person=person)
         form.populate_obj(person)
         db.session.commit()
+        DbLogger.log(person=person)
         return 'success'
     return render_template('person_edit.html', form=form)
 
@@ -1806,7 +1804,6 @@ def paybook_bankgrant():
             zipf.writestr('{}.csv'.format(i + 1), '\n'.join(lines))
         f.seek(0)
         data = f.read()
-    DbLogger.log()
     db.session.commit()
     return Response(
         (x for x in data),
@@ -1853,7 +1850,6 @@ def paybook_public_report():
                     book.address_detail,
                     book.money)))
     lines = map(book2csv, books)
-    DbLogger.log()
     db.session.commit()
     return Response(
         (x for x in '\n'.join(lines)),
