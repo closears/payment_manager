@@ -248,17 +248,28 @@ class PayBookManager(object):
         self.refresh_query()
 
     def refresh_query(self):
-        self.query = PayBook.query.filter(
-            PayBook.person_id == self.person.id,
-            PayBook.money != 0)
-        if self.items:
-            self.query = self.query.filter(PayBook.item_in(*self.items))
+        self.query = PayBook.query.filter(PayBook.money != 0)
+        self.query_filter()
 
     def __iter__(self):
         return iter(self.query.all())
 
     def next(self):
         return next(self)
+
+    def person_filter(self, query):
+        return query if self.person is None else query.filter(
+            PayBook.person_id == self.person.id)
+
+    def item_filter(self, query):
+        return query if self.items else query.filter(
+            PayBook.item_in(*self.items))
+
+    def query_filter(self, query=None):
+        if query is None:
+            self.query = self.item_filter(self.person_filter(self.query))
+            return self.query
+        return self.item_filter(self.person_filter(query))
 
     @property
     def count(self):
@@ -270,7 +281,10 @@ class PayBookManager(object):
 
     @person.setter
     def person(self, val):
-        self._person = val
+        if isinstance(val, int):
+            self._person = Person.query.get(val)
+        else:
+            self._person = val
         self.refresh_query()
 
     @property
@@ -292,10 +306,8 @@ class PayBookManager(object):
         return date(now.year, now.month, 1)
 
     def sum_money(self, bankcard=None, peroid=None):
-        query = db.session.query(func.sum(
-            PayBook.money)).filter(PayBook.person_id == self.person.id)
-        if self.items:
-            query = query.filter(PayBook.item_in(*self.items))
+        query = db.session.query(func.sum(PayBook.money))
+        query = self.query_filter(query)
         if bankcard:
             query = query.filter(PayBook.bankcard_id == bankcard.id)
         if peroid:
@@ -344,9 +356,8 @@ class PayBookManager(object):
             PayBook.item_id,
             PayBook.peroid,
             func.sum(PayBook.money).label('money'),
-            PayBook.peroid).filter(PayBook.person_id == self.person.id)
-        if self.items:
-            query = query.filter(PayBook.item_in(*self.items))
+            PayBook.peroid)
+        query = self.query_filter(query)
         groupby_lst = [PayBook.bankcard_id, PayBook.item_id]
         if groupby_peroid:
             groupby_lst.append(PayBook.peroid)
@@ -1582,6 +1593,7 @@ def paybook_batch_success():
             PayBookItem.name == name).one() for name in
             ('bank_should_pay', 'bank_payed', 'bank_failed')]
         lst = []
+        PayBookManager.create_tuple('b', 'i', 'i', 'm', 'r')
         for book in query.filter(in_fails):
             lst.extend(PayBook.create_tuple(
                 book.person_id, bank_should, bank_failed,
