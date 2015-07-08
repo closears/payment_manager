@@ -1626,15 +1626,20 @@ def paybook_batch_success():
     return render_template('paybook_batch_success.html', form=form)
 
 
-@app.route('/paybook/person/<int:person_id>', methods=['GET', 'POST'])
+@app.route('/paybook/person/<int:person_id>/bankcard/<int:bankcard_id>',
+           methods=['GET', 'POST'])
 @pay_admin_required
-@DbLogger.log_template('{{ person_id }},{{ peroid }}')
-def paybook_fail_correct(person_id):
+@DbLogger.log_template('{{ person_id }}')
+def paybook_fail_correct(person_id, bankcard_id):
     '''
+    correct person's faild money if operate by some wrong operation.
+    if correct money greater than fails, ignore
 '''
     form = FailCorrectForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         book_manager = PayBookManager(person_id, 'bank_failed')
+        book_manager.query = book_manager.query.filter(
+            PayBook.bankcard_id == bankcard_id)
         bank_failed, bank_should = [
             PayBookItem.query.filter(
                 PayBookItem.name == name).one()
@@ -1651,9 +1656,11 @@ def paybook_fail_correct(person_id):
                 bankcard2.no))
             abort(500)
         for book in book_manager.lst_groupby_bankcard(False):
+            if form.money.data > book.money:
+                break
             book_manager.create_tuple(
                 book.bankcard_id, bankcard2, bank_failed, bank_should,
-                book.money, remark='fail correct')
+                form.money.data, remark='fail correct')
         DbLogger.log(person_id=person_id)
         return 'success'
     return render_template('paybook_fail_correct.html', form=form)
