@@ -259,24 +259,24 @@ class AmendForm(ModelForm):
         return super(AmendForm, self).validate_on_submit()
 
     def populate_obj(self, lst):
-        sys_should = PayBookItem.query.filter(
-            PayBookItem.name == 'sys_should_pay').one()
-        sys_amend = PayBookItem.query.filter(
-            PayBookItem.name == 'sys_amend').one()
-        bank_should = PayBookItem.query.filter(
-            PayBookItem.name == 'bank_should_pay').one()
+        sys_should, sys_amend, bank_should = map(
+            lambda name: PayBookItem.query.filter(
+                PayBookItem.name == name).one(),
+            ('sys_should_pay', 'sys_amend', 'bank_should_pay'))
         bankcard = Bankcard.query.filter(
             Bankcard.no == self.bankcard.data).one()
         if self.books:
             # valish all money of all bankcards witch belong person
             lst.extend(reduce(
                 lambda x, y: x.extend(self.bookmanager.create_tuple(
-                    y.bankcard_id, sys_should, bank_should, y.money)) or x,
+                    y.bankcard_id, y.bankcard_id, sys_should, bank_should,
+                    y.money, remark='remend', save=False)) or x,
                 self.books, []))
             # amend money to new bankcard
             lst.extend(
                 self.bookmanager.create_tuple(
-                    bankcard, sys_amend, bank_should, self.money.data))
+                    bankcard, bankcard, sys_amend, bank_should,
+                    self.money.data, remark='remnd', save=False))
 
 
 class BatchSuccessFrom(Form):

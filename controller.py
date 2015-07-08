@@ -316,6 +316,8 @@ class PayBookManager(object):
 
     def __create_dict(self, item, bankcard, money, peroid, remark=None):
         result = {}
+        if self.person is None:
+            raise RuntimeError("person can't be None")
         result.update(person_id=self.person.id)
         result.update(
             bankcard_id=bankcard if isinstance(bankcard, int) else bankcard.id)
@@ -340,14 +342,17 @@ class PayBookManager(object):
                 item, bankcard, money, self.current_peroid, remark)))
         db.session.commit()
 
-    def create_tuple(self, bankcard, item1, item2, money, remark=None):
+    def create_tuple(self, bankcard1, bankcard2, item1, item2, money,
+                     remark=None, save=True):
+        '''create and save a tuple'''
         lst = map(
             lambda args: PayBook(**self.__create_dict(*args)),
             (
-                (item1, bankcard, -money, self.current_peroid, remark),
-                (item2, bankcard, money, self.current_peroid, remark)))
-        db.session.add_all(lst)
-        db.session.commit()
+                (item1, bankcard1, -money, self.current_peroid, remark),
+                (item2, bankcard2, money, self.current_peroid, remark)))
+        if save:
+            db.session.add_all(lst)
+            db.session.commit()
         return lst
 
     def lst_groupby_bankcard(self, negative=True, groupby_peroid=False):
@@ -1541,7 +1546,7 @@ def paybook_upload():
                 flash("unbind bankcard can't pay")
                 abort(500)
             PayBookManager(person).create_tuple(
-                bankcard, item1, item2, float(record.money))
+                bankcard, bankcard, item1, item2, float(record.money))
             db.session.flush()
         DbLogger.log(peroid=peroid)
         return 'success'
@@ -1585,28 +1590,22 @@ def paybook_batch_success():
                 PayBook.item_is('bank_should_pay'),
                 PayBook.in_peroid(form.peroid.data)).group_by(
                     PayBook.bankcard_id).having(money > 0)
+        bank_should, bank_payed, bank_failed = [PayBookItem.query.filter(
+            PayBookItem.name == name).one() for name in
+            ('bank_should_pay', 'bank_payed', 'bank_failed')]
         in_fails = exists().where(and_(
             PayBook.bankcard_id == Bankcard.id,
             Bankcard.no.in_(form.fails.data.splitlines())))\
             if form.fails.data.splitlines() else false()
-        bank_should, bank_payed, bank_failed = [PayBookItem.query.filter(
-            PayBookItem.name == name).one() for name in
-            ('bank_should_pay', 'bank_payed', 'bank_failed')]
-        lst = []
-        PayBookManager.create_tuple('b', 'i', 'i', 'm', 'r')
         for book in query.filter(in_fails):
-            lst.extend(PayBook.create_tuple(
-                book.person_id, bank_should, bank_failed,
-                book.bankcard_id, book.bankcard_id,
-                book.money, book.peroid, current_user.id))
+            PayBookManager(book.person_id).create_tuple(
+                book.bankcard_id, book.bankcard_id, bank_should, bank_failed,
+                book.money, remark='batch success')
         for book in query.filter(~in_fails):
-            lst.extend(PayBook.create_tuple(
-                book.person_id, bank_should, bank_payed,
-                book.bankcard_id, book.bankcard_id,
-                book.money, book.peroid, current_user.id))
-        db.session.add_all(lst)
+            PayBookManager(book.person_id).create_tuple(
+                book.bankcard_id, book.bankcard_id, bank_should, bank_payed,
+                book.money, remark='batch success')
         DbLogger.log(fails=','.join(form.fails.data.splitlines()))
-        db.session.commit()
         return 'success'
     return render_template('paybook_batch_success.html', form=form)
 
@@ -1619,14 +1618,7 @@ def paybook_batch_success():
 def paybook_fail_correct(person_id, peroid):
     form = FailCorrectForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
-        money_q = func.sum(PayBook.money).label('money')
-        books = db.session.query(
-            PayBook.bankcard_id.label('bankcard_id'),
-            money_q).filter(
-            PayBook.person_id == person_id,
-            PayBook.item_is('bank_failed'),
-            PayBook.in_peroid(peroid)).group_by(
-                PayBook.bankcard_id).having(money_q > 0).all()
+        book_manager = PayBookManager(person_id, 'bank_failed')
         bank_failed, bank_should = [
             PayBookItem.query.filter(
                 PayBookItem.name == name).one()
@@ -1645,21 +1637,11 @@ def paybook_fail_correct(person_id, peroid):
         # valish all money of paybook with failed bankcard
         # in bank failed item and
         # transfer to book record with new bankcard
-        db.session.add_all(
-            reduce(
-                lambda lst, b: lst.extend(
-                    PayBook.create_tuple(
-                        person_id,
-                        bank_failed,
-                        bank_should,
-                        b.bankcard_id,
-                        bankcard2.id,
-                        b.money,
-                        datetime.now(),
-                        current_user.id)) or lst,
-                books, []))
+        for book in book_manager.lst_groupby_bankcard(False):
+            book_manager.create_tuple(
+                book.bankcard_id, bankcard2, bank_failed, bank_should,
+                book.money, remark='fail correct')
         DbLogger.log(person_id=person_id, peroid=peroid)
-        db.session.commit()
         return 'success'
     return render_template('paybook_fail_correct.html', form=form)
 
