@@ -258,7 +258,7 @@ class AmendForm(ModelForm):
                 return False
         return super(AmendForm, self).validate_on_submit()
 
-    def populate_obj(self, lst):
+    def populate_obj(self, lst=[]):
         sys_should, sys_amend, bank_should = map(
             lambda name: PayBookItem.query.filter(
                 PayBookItem.name == name).one(),
@@ -270,18 +270,19 @@ class AmendForm(ModelForm):
             lst.extend(reduce(
                 lambda x, y: x.extend(self.bookmanager.create_tuple(
                     y.bankcard_id, y.bankcard_id, sys_should, bank_should,
-                    y.money, remark='remend', save=False)) or x,
+                    y.money, remark='remend', commit=False)) or x,
                 self.books, []))
             # amend money to new bankcard
             lst.extend(
                 self.bookmanager.create_tuple(
                     bankcard, bankcard, sys_amend, bank_should,
-                    self.money.data, remark='remnd', save=False))
+                    self.money.data, remark='remnd', commit=False))
 
 
 class BatchSuccessFrom(Form):
     peroid = DateField('peroid', validators=[Required()])
-    fails = TextAreaField('falied bankcard')
+    fails = TextAreaField('falied bankcard', validators=[
+        Regexp(r'(?:(?:\d{19}|(?:\d{2}-\d{15})),\d+(?:\.\d+)?[\r\n]?)*')])
 
 
 class FailCorrectForm(Form):
