@@ -288,9 +288,6 @@ class BatchSuccessFrom(Form):
 class FailCorrectForm(Form):
     bankcard = TextField(
         'bankcard', validators=[Regexp('^(?:\d{19})|(?:{\d{2}-\d{15})$')])
-    money = DecimalField('failed money',
-                         validators=[NumberRange(0.01, 1000000)],
-                         places=7, rounding=2)
 
 
 class SuccessCorrectForm(Form):

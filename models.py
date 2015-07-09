@@ -877,40 +877,6 @@ class PayBook(db.Model):
             PayBookItem.id == PayBook.item_id,
             PayBookItem.name.in_(item_names))) if item_names else false()
 
-    @classmethod
-    def create_tuple(cls, person, item1, item2, bankcard1,
-                     bankcard2, money, peroid, user):
-
-        def _create_dict(item, bankcard, money):
-            result = {}
-            if isinstance(person, int):
-                result.update(person_id=person)
-            else:
-                result.update(person=person)
-            if isinstance(bankcard, int):
-                result.update(bankcard_id=bankcard)
-            else:
-                result.update(bankcard=bankcard)
-            if isinstance(item, int):
-                result.update(item_id=item)
-            else:
-                result.update(item=item)
-            if isinstance(user, int):
-                result.update(create_user_id=user)
-            else:
-                result.update(create_by=user)
-            result.update(money=money)
-            result.update(peroid=peroid)
-            return result
-        return (PayBook(**_create_dict(_item, _bankcard, _money))
-                for _item, _bankcard, _money in
-                ((item1, bankcard1, -money), (item2, bankcard2, money)))
-
-    def forward_tuple(self, forward_item, bankcard, user):
-        return self.create_tuple(self.person, self.item, forward_item,
-                                 self.bankcard, bankcard, self.money,
-                                 self.peroid, user)
-
 
 class OperationLog(db.Model):
     __tablename__ = 'operation_logs'

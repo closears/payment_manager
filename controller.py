@@ -1626,20 +1626,17 @@ def paybook_batch_success():
     return render_template('paybook_batch_success.html', form=form)
 
 
-@app.route('/paybook/person/<int:person_id>/bankcard/<int:bankcard_id>',
+@app.route('/paybook/person/<int:person_id>',
            methods=['GET', 'POST'])
 @pay_admin_required
 @DbLogger.log_template('{{ person_id }}')
-def paybook_fail_correct(person_id, bankcard_id):
+def paybook_fail_correct(person_id):
     '''
-    correct person's faild money if operate by some wrong operation.
-    if correct money greater than fails, ignore
+    settle person's fail payed to should pay on new bankcard
 '''
     form = FailCorrectForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         book_manager = PayBookManager(person_id, 'bank_failed')
-        book_manager.query = book_manager.query.filter(
-            PayBook.bankcard_id == bankcard_id)
         bank_failed, bank_should = [
             PayBookItem.query.filter(
                 PayBookItem.name == name).one()
@@ -1656,11 +1653,9 @@ def paybook_fail_correct(person_id, bankcard_id):
                 bankcard2.no))
             abort(500)
         for book in book_manager.lst_groupby_bankcard(False):
-            if form.money.data > book.money:
-                break
             book_manager.create_tuple(
                 book.bankcard_id, bankcard2, bank_failed, bank_should,
-                form.money.data, remark='fail correct')
+                book.money, remark='fail correct')
         DbLogger.log(person_id=person_id)
         return 'success'
     return render_template('paybook_fail_correct.html', form=form)
@@ -1671,40 +1666,30 @@ def paybook_fail_correct(person_id, bankcard_id):
            '/peroid/<date:peroid>/successcorrect', methods=['GET', 'POST'])
 @pay_admin_required
 @DbLogger.log_template('{{ person_id }},{{ bankcard_id }},{{ peroid }}')
-def paybook_success_correct(bankcard_id, person_id, peroid):
+def paybook_success_correct(person_id, bankcard_id, peroid):
+    '''
+    correct person's bank payed what is created by mistake.
+    if money greater than book's money, ignore.
+    Notice: Suggest don't use this function unless nessary.
+'''
     form = SuccessCorrectForm(request.form)
     if request.method == 'POST' and form.validate_on_submit():
         money = func.sum(PayBook.money).label('money')
-        books = db.session.query(
-            PayBook.person_id.label('person'),
-            PayBook.bankcard_id.label('bankcard'),
-            PayBook.peroid,
-            money).filter(
-                PayBook.item_is('bank_payed'),
-                PayBook.in_peroid(peroid),
-                PayBook.person_id == person_id,
-                PayBook.bankcard_id == bankcard_id).group_by(
-                    PayBook.person_id, PayBook.bankcard_id).having(
-                        money > 0).all()
-        book_manager = PayBookManager(person_id, 'bank_payed')
-        book_manager.lst_groupby_bankcard(False)
+        book = db.session.query(money).filter(
+            PayBook.item_is('bank_payed'),
+            PayBook.in_peroid(peroid),
+            PayBook.person_id == person_id,
+            PayBook.bankcard_id == bankcard_id,
+            money > 0).one()
+        book_manager = PayBookManager(person_id)
         bank_payed, bank_failed = [
             PayBookItem.query.filter(PayBookItem.name == name).one()
             for name in ('bank_payed', 'bank_failed')]
-        if books:
-            db.session.add_all(
-                PayBook.create_tuple(
-                    person_id,
-                    bank_payed,
-                    bank_failed,
-                    bankcard_id,
-                    bankcard_id,
-                    min(form.money.data, books[0].money),
-                    peroid,
-                    current_user.id))
+        book_manager.create_tuple(
+            bankcard_id, bankcard_id, bank_payed, bank_failed,
+            min(form.money.data, book.money), remark='success correct')
         DbLogger.log(person_id=person_id,
                      bankcard_id=bankcard_id, peroid=peroid)
-        db.session.commit()
         return 'success'
     return render_template('paybook_success_correct.html', form=form)
 
