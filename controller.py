@@ -13,7 +13,6 @@ from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 from werkzeug.routing import BaseConverter
 from werkzeug.datastructures import MultiDict
 from jinja2 import Template
-from werkzeug.local import LocalStack
 import flask
 from flask import (
     render_template, session, request, flash, abort, redirect, current_app,
@@ -134,7 +133,6 @@ class DbLogger(object):
     '''log operation to db'''
 
     __val_filters = []  # class global val filters
-    __log_stack = LocalStack()
 
     @classmethod
     def add_val_filter(cls, val_filter):
@@ -178,7 +176,7 @@ class DbLogger(object):
         return True
 
     @classmethod
-    def log_template(cls, template=None):
+    def log_template(cls, template=None, methods=['POST']):
         '''
         make a template decorator for a controller fun.
         template: template content
@@ -186,14 +184,16 @@ class DbLogger(object):
         def decorator(f):
             @wraps(f)
             def wrapper(*args, **kwargs):
-                cls.__log_stack.push(template and Template(template))
+                request.log_template, request.log_content = None, None
+                if template:
+                    request.log_template = Template(template)
                 result = f(*args, **kwargs)
-                remark = cls.__log_stack.pop()
-                db.session.add(OperationLog(
-                    operator_id=current_user.id,
-                    method=f.__name__,
-                    remark=remark if isinstance(remark, str) else None))
-                db.session.commit()
+                if request.method.upper() in map(lambda x: x.upper(), methods):
+                    db.session.add(OperationLog(
+                        operator_id=current_user.id,
+                        method=f.__name__,
+                        remark=request.log_content))
+                    db.session.commit()
                 return result
             return wrapper
         return decorator
@@ -236,9 +236,8 @@ class DbLogger(object):
 
     @classmethod
     def log(cls, **kwargs):
-        template = cls.__log_stack.pop()
-        remark = template and template.render(**kwargs)
-        cls.__log_stack.push(remark)
+        request.log_content = request.log_template.render(**kwargs)\
+            if request.log_template else None
 
 
 class PayBookManager(object):
