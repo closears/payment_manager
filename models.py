@@ -83,6 +83,10 @@ class User(db.Model):
     def password(self):
         return self._password
 
+    @password.expression
+    def password(cls):
+        return cls._password.label('password')
+
     @password.setter
     def password(self, val):
         self._password = md5(val).hexdigest()
@@ -114,7 +118,7 @@ class Role(db.Model):
         return not self.__eq__(other)
 
     def __repr__(self):
-        return "<Role(name='name')>".format(self.name)
+        return "<Role(name='{}')>".format(self.name)
 
     def __str__(self):
         return "{}".decode('utf-8').format(self.name).encode('utf-8')
@@ -946,7 +950,7 @@ class Note(db.Model):
     def effective_before(cls, date):
         return and_(
             cls._effective.is_(True),
-            cls._start_date <= date,
+            cls.start_date <= date,
             or_(
                 cls._end_date.is_(None),
                 cls._end_date >= date))

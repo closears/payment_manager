@@ -100,6 +100,7 @@ class TestBase(TestCase):
 
     def tearDown(self):
         self.db.session.remove()
+        self.db.session.close()
 
     @property
     def authorized(self):
@@ -239,7 +240,8 @@ class AdminTestCase(TestBase):
             ))
         user = self._get_or_create(User, 'name', 'test')
         self.assertEqual(user.name, 'test')
-        self.session.query(User).delete()
+        self.session.query(User).filter(
+            User.id != self.admin.id).delete()
         self.session.commit()
 
     def test_remove_user(self):
@@ -259,7 +261,8 @@ class AdminTestCase(TestBase):
         self.assertTrue(not User.query.filter(User.name == 'test2').all())
         rv = self.client.post(url_for('admin_remove_user', pk=user.id))
         self.assert404(rv)
-        self.session.query(User).delete()
+        self.session.query(User).filter(
+            User.id != self.admin.id).delete()
         self.session.commit()
 
     def test_admin_user_inactivate(self):
@@ -280,7 +283,8 @@ class AdminTestCase(TestBase):
         self.assertIn('success', rv.data)
         user = User.query.get(user.id)
         self.assertTrue(user.active)
-        self.session.query(User).delete()
+        self.session.query(User).filter(
+            User.id != self.admin.id).delete()
         self.session.commit()
 
     def test_admin_user_changpassword(self):
@@ -299,7 +303,7 @@ class AdminTestCase(TestBase):
         )
         user = User.query.get(user.id)
         self.assertEqual(User(password='123123').password, user.password)
-        self.session.query(User).delete()
+        self.session.query(User).filter(User.id != self.admin.id).delete()
         self.session.commit()
 
     def test_admin_user_add_role_form(self):
@@ -307,30 +311,33 @@ class AdminTestCase(TestBase):
         user = User.query.filter(User.name == 'admin').one()
         form = AdminAddRoleForm(user=user)
         self.assertIn('test', form.role())
-        self.session.query(Role).delete()
+        self.session.query(Role).filter(Role.name == 'test').delete()
         self.session.commit()
 
     def test_admin_user_add_and_romove_role(self):
-        user = User(name='test', password='test')
-        role = Role(name='test')
-        role1 = Role(name='test1')
-        self.session.add(role1)
-        self.session.add(role)
-        self.session.add(user)
-        self.session.commit()
-
+        user = self._get_or_create(
+            User, User.name, 'test', name='test', password='test')
+        role = self._get_or_create(Role, Role.name, 'test', name='test')
+        role1 = self._get_or_create(Role, Role.name, 'test1', name='test1')
         self.client.post('/login', data=dict(
             name='admin',
             password='admin'))
+        user.roles = []
+        self.session.commit()
+        user = User.query.get(user.id)
+        self.assertNotIn(role, user.roles)
+        self.assertNotIn(role1, user.roles)
         self.assert_authorized()
         rv = self.client.get(url_for('admin_user_add_role', pk=user.id))
         self.assertIn('<select', rv.data)
-        self.client.post(url_for('admin_user_add_role', pk=user.id),
-                         data=dict(role=role.id))
+        self.client.post(
+            url_for('admin_user_add_role', pk=user.id),
+            data=dict(role=role.id))
         user = User.query.get(user.id)
         self.assertIn(role, user.roles)
-        self.client.post(url_for('admin_user_add_role', pk=user.id),
-                         data=dict(role=role1.id))
+        self.client.post(
+            url_for('admin_user_add_role', pk=user.id),
+            data=dict(role=role1.id))
         user = User.query.get(user.id)
         self.assertIn(role1, user.roles)
         self.client.post(url_for('admin_user_remove_role', pk=user.id),
@@ -339,12 +346,12 @@ class AdminTestCase(TestBase):
         self.assertNotIn(role1, user.roles)
         user.roles = []
         self.session.commit()
-        self._del_all_instance(User)
-        self._del_all_instance(Role)
+        User.query.filter(User.id != self.admin.id).delete()
+        self.session.commit()
 
     def test_admin_user_detail(self):
         user = User.query.filter(User.name == 'admin').one()
-        role = Role(name='test')
+        role = self._get_or_create(Role, Role.name, 'test', name='test')
         self.session.add(role)
         self.assert_not_authorized()
         self.client.post('/login', data=dict(
@@ -358,14 +365,16 @@ class AdminTestCase(TestBase):
         self.assertIn('admin', rv.data)
         self.assertIn('test', rv.data)
         user.roles.remove(role)
-        self._del_all_instance(User)
-        self._del_all_instance(Role)
+        User.query.filter(User.id != self.admin.id).delete()
+        self.session.delete(role)
 
     def test_user_search(self):
         for i in range(30):
-            user = User(name='test{}'.format(i), password='test')
-            self.session.add(user)
-            role = Role(name='test{}'.format(i))
+            user = self._get_or_create(
+                User, User.name, 'test{}'.format(i),
+                name='test{}'.format(i), password='test')
+            role = self._get_or_create(
+                Role, Role.name, 'test{}'.format(i), name='test{}'.format(i))
             user.roles.append(role)
             self.session.commit()
         self.client.post('/login', data=dict(name='admin', password='admin'))
@@ -373,8 +382,14 @@ class AdminTestCase(TestBase):
             url_for('admin_user_search', name='test', page=1, per_page=30))
         self.assertIn('test0', rv.data)
         self.assertIn('test29', rv.data)
-        self._del_all_instance(User)
-        self._del_all_instance(Role)
+        user.roles = []
+        self.session.commit()
+        for i in range(30):
+            User.query.filter(
+                User.name == 'test{}'.format(i)).delete()
+            Role.query.filter(
+                Role.name == 'test{}'.format(i)).delete()
+        self.session.commit()
 
     def test_admin_add_role(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
@@ -509,12 +524,12 @@ class AddressTestCase(TestBase, AddressDataMixin):
         self.assertEqual(address.no, '42052511xxx')
         self.client.post(url_for('address_add'), data=dict(
             no='42052511yyy',
-            name='test2',
-            parent_id=''))
+            name='test2'))
         address = Address.query.filter(
             Address.name == 'test2').one()
         self.assertFalse(address.parent)
-        self.session.query(Address).delete()
+        self.session.query(Address).filter(
+            Address.id != self.admin.address_id).delete()
         self.session.commit()
 
     def test_address_delete(self):
@@ -596,6 +611,7 @@ class PersonTestCase(PersonTestBase):
         self.assertIsNotNone(person.status)
 
     def test_person_form(self):
+        self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
         form = PersonForm(self.admin, formdata=MultiDict([
             ('idcard', '420525195107010010'),
@@ -1020,8 +1036,8 @@ class BankcardTestCase(BankcardTestBase):
 
     def test_bankcard_search(self):
         self.client.post('/login', data=dict(name='admin', password='admin'))
-        self._del_all_instance(Person)
         self._del_all_instance(Bankcard)
+        self._del_all_instance(Person)
         self.client.post(url_for('bankcard_add'), data=dict(
             no='6228410770613888888', name='test'))
         bankcard = self.session.query(Bankcard).filter(
@@ -1040,6 +1056,7 @@ class BankcardTestCase(BankcardTestBase):
         self.assertIn('test', rv.data)
         self.client.post(url_for('bankcard_update', pk=bankcard.id),
                          data=dict(no='6228410770613888888', name='test2'))
+        bankcard = self.session.query(Bankcard).get(bankcard.id)
         self.assertEqual(bankcard.name, 'test2')
         self._del_all_instance(Bankcard)
         self._del_all_instance(Person)
@@ -1232,8 +1249,7 @@ class NoteTestCase(TestBase, AddressDataMixin):
             name='test', password='test'))
         user = self.session.query(User).filter(
             User.name == 'test').one()
-        self.assertEqual(User(name='test', password='test'), user)
-        self.assertEqual(User(name='test', password='test'), user)
+        # self.assertEqual(User(name='test', password='test'), user)
         self.client.post(url_for('note_to_user', user_id=user.id), data=dict(
             content='xxxyyy',
             start_date=self.yestoday,
