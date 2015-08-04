@@ -194,6 +194,8 @@ class DbLogger(object):
                         method=f.__name__,
                         remark=request.log_content))
                     db.session.commit()
+                del request.log_template
+                del request.log_content
                 return result
             return wrapper
         return decorator
@@ -208,8 +210,8 @@ class DbLogger(object):
         '''
         def decorator(f):
             def setter(ins, name, new_val):
-                super(type(ins), ins).__setattr__(name, new_val)
                 old_val = getattr(ins, name, None)
+                super(type(ins), ins).__setattr__(name, new_val)
                 if not(filter_fun is None or filter_fun(old_val, new_val)):
                     return
                 if not cls.__filter(old_val, new_val):
@@ -244,31 +246,23 @@ class PayBookManager(object):
     def __init__(self, person, *items):
         self.person = person
         self.items = items
+        self.query = PayBook.query.filter(
+            PayBook.money != 0)
         self.refresh_query()
 
+    def _filter_query(self, query):
+        return query.filter(
+            PayBook.person_id == self.person.id,
+            PayBook.item_id.in_(self.item_ids))
+
     def refresh_query(self):
-        self.query = PayBook.query.filter(PayBook.money != 0)
-        self.query_filter()
+        self.query = self._filter_query(self.query)
 
     def __iter__(self):
         return iter(self.query.all())
 
     def next(self):
         return next(self)
-
-    def person_filter(self, query):
-        return query if self.person is None else query.filter(
-            PayBook.person_id == self.person.id)
-
-    def item_filter(self, query):
-        return query if self.items else query.filter(
-            PayBook.item_in(*self.items))
-
-    def query_filter(self, query=None):
-        if query is None:
-            self.query = self.item_filter(self.person_filter(self.query))
-            return self.query
-        return self.item_filter(self.person_filter(query))
 
     @property
     def count(self):
@@ -290,6 +284,10 @@ class PayBookManager(object):
     def items(self):
         return self._items
 
+    @property
+    def item_ids(self):
+        return map(lambda x: x.id, self.items)
+
     @items.setter
     def items(self, items):
         self._items = map(
@@ -306,12 +304,16 @@ class PayBookManager(object):
 
     def sum_money(self, bankcard=None, peroid=None):
         query = db.session.query(func.sum(PayBook.money))
-        query = self.query_filter(query)
+        query = self._filter_query(query)
         if bankcard:
             query = query.filter(PayBook.bankcard_id == bankcard.id)
         if peroid:
             query = query.filter(PayBook.in_peroid(peroid))
         return query.scalar()
+
+    @property
+    def money(self):
+        return self.sum_money()
 
     def __create_dict(self, item, bankcard, money, peroid, remark=None):
         result = {}
@@ -328,17 +330,17 @@ class PayBookManager(object):
         return result
 
     def settle_to(self, item, bankcard, remark=None):
-        if self.query.count() == 0:
+        if self.count == 0:
+            return
+        if self.money == 0:
             return
         books = self.query.all()
         for book in books:
             db.session.add(PayBook(**self.__create_dict(
                 book.item, book.bankcard, -book.money, self.current_peroid,
                 remark)))
-        money = reduce(lambda a, b: a + b.money, books, 0.0)
-        if abs(money) >= 0.01:
-            db.session.add(PayBook(**self.__create_dict(
-                item, bankcard, money, self.current_peroid, remark)))
+        db.session.add(PayBook(**self.__create_dict(
+            item, bankcard, self.money, self.current_peroid, remark)))
         db.session.commit()
 
     def create_tuple(self, bankcard1, bankcard2, item1, item2, money,
@@ -362,7 +364,7 @@ class PayBookManager(object):
             PayBook.peroid,
             money,
             PayBook.peroid)
-        query = self.query_filter(query)
+        query = self._filter_query(query)
         groupby_lst = [PayBook.bankcard_id, PayBook.item_id]
         if groupby_peroid:
             groupby_lst.append(PayBook.peroid)
@@ -1547,7 +1549,7 @@ def paybook_upload():
                 abort(500)
             PayBookManager(person).create_tuple(
                 bankcard, bankcard, item1, item2, float(record.money))
-            db.session.flush()
+        db.session.flush()
         DbLogger.log(peroid=peroid)
         return 'success'
     return render_template('upload.html', form=form)
@@ -1561,8 +1563,8 @@ def paybook_amend(person_id):
     person = db.my_get_obj_or_404(Person, Person.id, person_id)
     manager = PayBookManager(person, 'sys_should_pay')
     form = AmendForm(obj=manager, formdata=request.form)
-    payed = PayBookManager(person, 'bank_should_pay').sum_money()
-    if not payed and request.method == 'POST' and form.validate_on_submit():
+    payed = manager.sum_money()
+    if payed and request.method == 'POST' and form.validate_on_submit():
         try:
             form.populate_obj()
         except NoResultFound:

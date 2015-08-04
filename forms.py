@@ -247,15 +247,17 @@ class AmendForm(ModelForm):
         self.books = self.bookmanager.lst_groupby_bankcard()
 
     def validate_on_submit(self):
+        item_ids = (lambda x: x.id)(
+            PayBookItem.query.filter(
+                PayBookItem.name.in_(['sys_should_pay', 'bank_payed'])))
         for book in self.books:
-            item = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
-                book.item, PayBookItem.query)
-            if item.name not in ['sys_should_pay', 'bank_payed']:
+            if book.item_id not in item_ids:
                 return False
             bankcard = (lambda x, q: isinstance(x, int) and q.get(x) or x)(
-                book.bankcard, Bankcard.query)
+                book.bankcard_id, Bankcard.query)
             if not bankcard.binded:
                 return False
+        ''
         return super(AmendForm, self).validate_on_submit()
 
     def populate_obj(self, lst=[]):
