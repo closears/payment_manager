@@ -197,38 +197,38 @@ class Address(db.Model):
             address.ancestors))
 
 
-class PersonStandardAssoc(db.Model):
-    __tablename__ = 'person_standard'
+class PersonWage(db.Model):
+    __tablename__ = 'person_wages'
     id = db.Column('id', db.Integer, primary_key=True)
+    standard_name = db.Column(db.String, unique=True)  # standard name
     person_id = db.Column(
         'person_id',
         db.Integer,
         db.ForeignKey('persons.id')
     )
-    person = db.relationship('Person', backref='standard_assoces')
-    standard_id = db.Column(
-        'standard_id',
-        db.Integer,
-        db.ForeignKey('standards.id')
-    )
-    standard = db.relationship('Standard', backref='person_assoces')
+    person = db.relationship('Person', backref='wages')
+    money = db.Column(db.Numeric(precision=64, scale=2), nullable=False)
+    # how much of money
     _start_date = db.Column('start_date', db.Date, nullable=False)
     _end_date = db.Column('end_date', db.Date)
 
     def __repr__(self):
-        return "<PersonStandardAssoc(standard_id={standard},person_id={person},\
+        return "<PersonWage(person_id={person},\
+        standard_name={name},money={money},\
         _start_date={start_date},_end_date={end_date})>".format(
-            standard=self.standard_id,
             person=self.person_id,
+            name=self.standard_name,
+            money=self.money,
             start_date=self.start_date,
             end_date=self.end_date
         )
 
     def __str__(self):
-        return "{person},{standard},{start_date},{end_date}".decode(
+        return "{person},{name},{money},{start_date},{end_date}".decode(
             'utf-8').format(
                 person=self.person.name,
-                standard=self.standard.name,
+                name=self.standard_name,
+                money=self.money,
                 start_date=self.start_date,
                 end_date=self.end_date if self.end_date else '').encode(
                     'utf-8')
@@ -283,21 +283,19 @@ class PersonStandardAssoc(db.Model):
         return cls.effective_before(datetime.datetime.now().date())
 
     @hybrid_method
-    def total_standard(self, person, peroid):
+    def total_wage(self, person, peroid):
         money = 0.0
-        for assoc in person.standard_assoces:
-            if assoc.effective_before(peroid):
-                money += assoc.standard.money
+        for wage in person.wages:
+            if wage.effective_before(peroid):
+                money += wage.money
         return money
 
-    @total_standard.expression
-    def total_standard(cls, person, peroid):
-        return select([func.sum(Standard.money).label('money')]).where(
-            exists().where(and_(
-                Standard.id == cls.standard_id,
-                exists().where(and_(
-                    cls.person_id == person.id,
-                    cls.effective_before(peroid)))))).c.money
+    @total_wage.expression
+    def total_wage(cls, person, peroid):
+        return select([func.sum(cls.money).label('money')]).where(
+            and_(
+                cls.person_id == person.id,
+                cls.effective_before(peroid))).c.money.label('total_wage')
 
 
 class DateError(RuntimeError):
@@ -316,14 +314,6 @@ class Person(db.Model):
                                                             order_by=id))
     address_detail = db.Column(db.String, nullable=False)
     securi_no = db.Column(db.String, nullable=False, unique=True)
-    _personal_wage = db.Column(db.Float(precision=2), nullable=False,
-                               default=0.0)
-    standard_wages = db.relationship(
-        'Standard',
-        secondary=PersonStandardAssoc.__tablename__,
-        backref='persons',
-        remote_side=[id]
-    )
     STATUS_CHOICES = (
         (unicode('normal-unretire'), ('正常参保')),
         (unicode('dead-unretire'), ('在职死亡')),
@@ -368,18 +358,13 @@ class Person(db.Model):
 
     @hybrid_property
     def personal_wage(self):
-        return self._personal_wage
-
-    @personal_wage.setter
-    def personal_wage(self, val):
-        if self.status != self.__status_str(self.NORMAL_RETIRE):
-            self._personal_wage = 0.0
-        else:
-            self._personal_wage = val
+        return sum(filter(
+            lambda w: w.standard_name == 'personal', self.wages))
 
     @personal_wage.expression
     def personal_wage(cls):
-        return cls._personal_wage.label('personal_wage')
+        return PersonWage.filter(
+            PersonWage.standard_name == 'personal').c.money
 
     @hybrid_property
     def birthday(self):
@@ -442,16 +427,18 @@ class Person(db.Model):
         self._status = self.__status_str(self.NORMAL_RETIRE)
         return self
 
+    def __tidy_wages(self, end_date):
+        self.wages = filter(
+            lambda wage: wage.start_date <= end_date, self.wages)
+        for wage in self.wages:
+            wage.end_date = end_date
+
     def dead(self, dead_day):
         if self.can_dead_unretire:
             self._status = self.__status_str(self.DEAD_UNRETIRE)
         elif self.can_dead_retire:
             self._status = self.__status_str(self.DEAD_RETIRE)
-            self.standard_assoces = filter(  # remove invalid standard
-                lambda assoc: assoc.start_date <= dead_day,
-                self.standard_assoces)
-            for assoc in self.standard_assoces:
-                assoc.end_date = dead_day
+            self.__tidy_wages(dead_day)
         else:
             raise PersonStatusError('person can not be dead')
         self.dead_day = dead_day
@@ -462,12 +449,7 @@ class Person(db.Model):
             self._status = self.__status_str(self.ABROT_UNRETIRE)
         elif self.can_abort_retire:
             self._status = self.__status_str(self.ABORT_RETIRE)
-            self.standard_assoces = filter(  # remove invalid standard
-                lambda assoc: assoc.start_date <= abort_date,
-                self.standard_assoces)
-            for assoc in self.standard_assoces:
-                now = datetime.datetime.now().date()
-                assoc.end_date = abort_date or now
+            self.__tidy_wages(abort_date or datetime.datetime.now().date())
         else:
             raise PersonStatusError('Person can not be abort')
         return self
@@ -569,7 +551,7 @@ class Person(db.Model):
     def can_pay(self):
         return self.__status_is(self.NORMAL_RETIRE)
 
-    @property
+    '''@property
     def is_valid_standard_wages(self):
         if self.status != self.__status_str(self.NORMAL_RETIRE):
             return False
@@ -599,28 +581,21 @@ class Person(db.Model):
                 return True
             if not reduce(lambda x, y: x and f(x, y), date_lst):
                 return False
-        return True
+        return True'''
 
     @hybrid_method
     def total_wage_before(self, last_date):
-        result = self.personal_wage
-        for assoc in self.standard_assoces:
-            if assoc.effective_before(last_date):
-                result += assoc.standard.money
-        return result
+        return sum(filter(
+            lambda wage: wage.effective_before(last_date), self.wages))
 
     @total_wage_before.expression
     def total_wage_before(cls, last_date):
-        Assoc = PersonStandardAssoc
-        expression = select(
-            [func.sum(Standard.money).label('money')]).where(
-                exists().where(and_(
-                    Assoc.standard_id == Standard.id,
-                    exists().where(and_(
-                        Assoc.person_id == cls.id,
-                        Assoc.effective_before(last_date)))))).c.money +\
-            cls.personal_wage
-        return expression.label('total_wage_before')
+        return select(
+            [func.sum(PersonWage.money).label('money')]).where(
+                and_(
+                    PersonWage.person_id == cls.id,
+                    PersonWage.effective_before(last_date))
+            ).c.money.label('total_wage_before')
 
     @hybrid_property
     def total_wage(self):
@@ -641,25 +616,6 @@ class PersonAgeError(RuntimeError):
 
 class PersonStatus(object):
     ''''''
-
-
-class Standard(db.Model):
-    __tablename__ = 'standards'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String, nullable=False, unique=True)
-    money = db.Column(db.Float(precision=2), nullable=False, default=0.0)
-
-    def __repr__(self):
-        return "<Standard(name='{name}', money={money})>".format(
-            name=self.name.encode('utf-8'),
-            money=self.money
-        )
-
-    def __str__(self):
-        return '{name},{money}'.decode('utf-8').format(
-            name=self.name,
-            money=self.money
-        ).encode('utf-8')
 
 
 class Bankcard(db.Model):
