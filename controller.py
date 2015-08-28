@@ -219,7 +219,7 @@ class DbLogger(object):
                 db.session.add(OperationLog(
                     operator_id=current_user.id,
                     method=f.__name__,
-                    remark='name:{old_val}'.format(old_val)))
+                    remark='{name}:{old_val}'.format(name, old_val)))
 
             @wraps(f)
             def wrapper(*args, **kwargs):
@@ -330,6 +330,7 @@ class PayBookManager(object):
         return result
 
     def settle_to(self, item, bankcard, remark=None):
+        ''' settle all paybook items to a new paybook item.'''
         if self.count == 0:
             return
         if self.money == 0:
@@ -357,6 +358,7 @@ class PayBookManager(object):
         return lst
 
     def lst_groupby_bankcard(self, negative=True, groupby_peroid=False):
+        ''' list paybook group by bankcard'''
         money = func.sum(PayBook.money).label('money')
         query = db.session.query(
             PayBook.bankcard_id,
@@ -490,11 +492,6 @@ def _map():
 
 
 @app.template_global()
-def lst2csv(lst):
-    return reduce(lambda x, y: '{},{}'.format(x, y), lst) if lst else ''
-
-
-@app.template_global()
 def url_for_other_page(page, per_page):
     args = request.view_args.copy()
     args.update(**request.args)
@@ -536,7 +533,7 @@ def login():
                 return redirect(redirect_url)
         except NoResultFound:
             return redirect(redirect_url)
-        login_user(user)
+        login_user(user, remember=False)
         identity_changed.send(
             current_app._get_current_object(),
             identity=Identity(user.id))

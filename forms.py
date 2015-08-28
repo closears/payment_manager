@@ -1,5 +1,4 @@
 # coding=utf-8
-from datetime import datetime
 from flask_wtf import Form
 from wtforms_alchemy import model_form_factory
 from wtforms import (
@@ -9,8 +8,7 @@ from wtforms.validators import (
     Required, EqualTo, Regexp, NumberRange, Optional)
 from models import db
 from models import (
-    User, Role, Address, Person, Standard, PersonStandardAssoc, Bankcard,
-    Note, PayBookItem, PayBook)
+    User, Role, Address, Person, PersonWage, Bankcard, Note, PayBookItem)
 
 
 BaseModelForm = model_form_factory(Form)
@@ -142,9 +140,6 @@ class PersonForm(ModelForm):
     address_id = SelectField(
         'address', validators=[Required()], coerce=int)
     birthday = DateField('birthday', validators=[Required()])
-    personal_wage = DecimalField(
-        'personal wage', validators=[NumberRange(min=0.00, max=10000)],
-        places=7, rounding=2)
 
     def __init__(self, user, **kwargs):
         super(PersonForm, self).__init__(**kwargs)
@@ -165,12 +160,6 @@ class PersonForm(ModelForm):
     class Meta:
         model = Person
         only = ['idcard', 'name',  'address_detail', 'securi_no']
-
-
-class StandardForm(ModelForm):
-
-    class Meta:
-        model = Standard
 
 
 class StandardBindForm(Form):

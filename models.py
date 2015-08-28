@@ -6,7 +6,7 @@ from datetime import timedelta
 from hashlib import md5
 from dateutil.relativedelta import relativedelta
 from flask import Flask, abort
-from sqlalchemy import or_, and_, false, exists, select, func
+from sqlalchemy import or_, and_, false, exists, select, func, UniqueConstraint
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from flask_sqlalchemy import SQLAlchemy, Pagination
 
@@ -172,8 +172,7 @@ class Address(db.Model):
         if not address or not address.descendants:
             return false()
         return cls.id.in_(map(
-            lambda addr: addr.id,
-            address.descendants))
+            lambda addr: addr.id, address.descendants))
 
     @property
     def ancestors(self):
@@ -197,37 +196,71 @@ class Address(db.Model):
             address.ancestors))
 
 
-class PersonWage(db.Model):
-    __tablename__ = 'person_wages'
+class WageCatgory(db.Model):
+    __tablename__ = 'wage_categories'
     id = db.Column('id', db.Integer, primary_key=True)
-    standard_name = db.Column(db.String, unique=True)  # standard name
+    name = db.Column(db.String, nullable=False, unique=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey('wage_categories.id'))
+    parent = db.relationship(
+        'WageCatgory', backref='childs', remote_side=[id])
+
+    def __repr__(self):
+        return "<WageCatgory(name={name}, parent_id={parent_id})>".format(
+            name=self.name, parent_id=self.parent_id)
+
+    def __str__(self):
+        return self.name
+
+
+class PersonWageAssoc(db.Model):
+    __tablename__ = 'person_wage_assoc'
+    __table_args__ = (UniqueConstraint('person_id', 'category_id'))
+    id = db.Column('id', db.Integer, primary_key=True)
     person_id = db.Column(
-        'person_id',
-        db.Integer,
-        db.ForeignKey('persons.id')
-    )
-    person = db.relationship('Person', backref='wages')
+        db.Integer, db.ForeignKey('persons.id'), nullable=False)
+    category_id = db.Column(
+        db.Integer, db.ForeignKey('wage_categories.id'), nullable=False)
+    person = db.relationship('Person', backref='wage_assoc')
+    category = db.relationship('WageCatgory', backref='person_assoc')
+    effective = db.Column(db.Boolean, nullable=False, default=True)
+
+    def __repr__(self):
+        return "<PersonWageAssoc(person_id={person_id}," +\
+            "category_id={category_id},effective={effective})>".format(
+                person_id=self.person_id, category_id=self.category_id,
+                effective=self.effective)
+
+    def __str__(self):
+        return "{person_name},{category_name},{effective}".format(
+            person_name=self.person.name, category_name=self.category.name,
+            effective=self.effective)
+
+
+class PersonWageEnjoyment(db.Model):
+    __tablename__ = 'person_wage_enjoyments'
+    id = db.Column('id', db.Integer, primary_key=True)
+    assoc_id = db.Column(
+        db.Integer, db.ForeignKey('person_wage_assoc.id'), nullable=False)
+    assoc = db.relationship('PersonWageAssoc', backref='enjoyments')
     money = db.Column(db.Numeric(precision=64, scale=2), nullable=False)
     # how much of money
     _start_date = db.Column('start_date', db.Date, nullable=False)
     _end_date = db.Column('end_date', db.Date)
 
     def __repr__(self):
-        return "<PersonWage(person_id={person},\
-        standard_name={name},money={money},\
+        return "<PersonWage(assoc_id={assoc_id},money={money},\
         _start_date={start_date},_end_date={end_date})>".format(
-            person=self.person_id,
-            name=self.standard_name,
+            assoc_id=self.assoc_id,
             money=self.money,
             start_date=self.start_date,
             end_date=self.end_date
         )
 
     def __str__(self):
-        return "{person},{name},{money},{start_date},{end_date}".decode(
+        return "{person},{wage_name},{money},{start_date},{end_date}".decode(
             'utf-8').format(
-                person=self.person.name,
-                name=self.standard_name,
+                person=self.assoc.person.name,
+                wage_name=self.assoc.category.name,
                 money=self.money,
                 start_date=self.start_date,
                 end_date=self.end_date if self.end_date else '').encode(
@@ -285,17 +318,22 @@ class PersonWage(db.Model):
     @hybrid_method
     def total_wage(self, person, peroid):
         money = 0.0
-        for wage in person.wages:
-            if wage.effective_before(peroid):
-                money += wage.money
+        for assoc in person.wage_assoc:
+            for enjoyment in assoc.enjoyments:
+                if enjoyment.effective_before(peroid):
+                    money + enjoyment.money
         return money
 
     @total_wage.expression
     def total_wage(cls, person, peroid):
         return select([func.sum(cls.money).label('money')]).where(
             and_(
-                cls.person_id == person.id,
-                cls.effective_before(peroid))).c.money.label('total_wage')
+                exists().where(
+                    and_(
+                        PersonWageAssoc.id == cls.assoc_id,
+                        PersonWageAssoc.person_id == person.id)),
+                cls.effective_before(peroid)
+            )).c.money.label('total_wage')
 
 
 class DateError(RuntimeError):
@@ -356,15 +394,45 @@ class Person(db.Model):
             name=self.name,
             status=self.status).encode('utf-8')
 
+    @hybrid_method
+    def sum_by_category_name(self, name):
+        return sum(map(
+            lambda enjoyment: enjoyment.money,
+            filter(
+                lambda enjoyment: enjoyment.effective,
+                map(
+                    lambda assoc: assoc.enjoyment,
+                    filter(
+                        lambda assoc: assoc.category.name == name,
+                        self.wage_assoc)))))
+
+    @sum_by_category_name.expression
+    def sum_by_category_name(cls, name):
+        Category = WageCatgory
+        Assoc = PersonWageAssoc
+        Enjoyment = PersonWageEnjoyment
+        return select(
+            [func.sum(Enjoyment.money).label('money')]).where(
+                exists().where(
+                    and_(
+                        Enjoyment.assoc_id == Assoc.id,
+                        Enjoyment.effective,
+                        exists().where(
+                            and_(
+                                Assoc.person_id == cls.id,
+                                exists().where(
+                                    and_(
+                                        Assoc.category_id == Category.id,
+                                        Category.name == name))))))
+            ).c.money
+
     @hybrid_property
     def personal_wage(self):
-        return sum(filter(
-            lambda w: w.standard_name == 'personal', self.wages))
+        return self.sum_by_category_name('personal')
 
     @personal_wage.expression
     def personal_wage(cls):
-        return PersonWage.filter(
-            PersonWage.standard_name == 'personal').c.money
+        return cls.sum_by_category_name('personal')
 
     @hybrid_property
     def birthday(self):
@@ -427,7 +495,7 @@ class Person(db.Model):
         self._status = self.__status_str(self.NORMAL_RETIRE)
         return self
 
-    def __tidy_wages(self, end_date):
+    def __tidy_wages(self, end_date):  # TODO rewrite
         self.wages = filter(
             lambda wage: wage.start_date <= end_date, self.wages)
         for wage in self.wages:
